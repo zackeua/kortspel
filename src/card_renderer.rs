@@ -325,7 +325,7 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32) {
         }
         Rank::Jack => {
             let tunic = Color::new(0.15, 0.44, 0.72, 1.0);
-            pattern!(3.0, 0.0, 4.0, &[0b0010000, 0b0111000, 0b1111111], GOLD);
+            draw_face_body(x, y, scale, tunic, GOLD);
             pattern!(3.0, 11.0, 4.0, &[0b0011100, 0b0111110], ink);
             pattern!(
                 3.0,
@@ -336,19 +336,13 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32) {
             );
             rect!(10.0, 27.0, 4.0, 4.0, ink);
             rect!(22.0, 27.0, 4.0, 4.0, ink);
-            pattern!(11.0, 39.0, 4.0, &[0b0001000, 0b0011100], skin);
-            pattern!(
-                0.0,
-                47.0,
-                4.0,
-                &[0b0010000, 0b0111110, 0b1111111, 0b1111111, 0b1111111],
-                tunic,
-            );
+            pattern!(3.0, 0.0, 4.0, &[0b0010000, 0b0111000, 0b1111111], GOLD);
+            pattern!(11.0, 37.0, 4.0, &[0b0001000, 0b0011100], skin);
             rect!(15.0, 47.0, 4.0, 16.0, GOLD);
         }
         Rank::Queen => {
             let hair = Color::new(0.55, 0.16, 0.39, 1.0);
-            pattern!(3.0, 0.0, 4.0, &[0b1010101, 0b1111111], GOLD);
+            draw_face_body(x, y, scale, hair, GOLD);
             pattern!(
                 3.0,
                 9.0,
@@ -368,19 +362,13 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32) {
             rect!(11.0, 29.0, 4.0, 4.0, ink);
             rect!(21.0, 29.0, 4.0, 4.0, ink);
             pattern!(11.0, 38.0, 4.0, &[0b0111110, 0b0011100], PINK);
-            pattern!(
-                0.0,
-                46.0,
-                4.0,
-                &[0b0010000, 0b0111110, 0b1111111, 0b1111111, 0b1111111],
-                hair,
-            );
+            pattern!(3.0, 0.0, 4.0, &[0b1010101, 0b1111111], GOLD);
             pattern!(14.0, 47.0, 4.0, &[0b0011100, 0b0011100], GOLD);
         }
         Rank::King => {
             let beard = Color::new(0.42, 0.22, 0.11, 1.0);
             let robe = Color::new(0.43, 0.2, 0.58, 1.0);
-            pattern!(3.0, 0.0, 4.0, &[0b1010101, 0b1111111, 0b1111111], GOLD);
+            draw_face_body(x, y, scale, robe, GOLD);
             pattern!(
                 3.0,
                 13.0,
@@ -397,17 +385,35 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32) {
                 &[0b0111110, 0b0111110, 0b0011100, 0b0011100],
                 beard,
             );
-            pattern!(
-                0.0,
-                48.0,
-                4.0,
-                &[0b0010000, 0b0111110, 0b1111111, 0b1111111, 0b1111111],
-                robe,
-            );
+            pattern!(3.0, 0.0, 4.0, &[0b1010101, 0b1111111, 0b1111111], GOLD);
             pattern!(15.0, 49.0, 4.0, &[0b0011100, 0b0011100], GOLD);
         }
         _ => (),
     }
+}
+
+fn draw_face_body(x: f32, y: f32, scale: f32, robe: Color, trim: Color) {
+    draw_pixel_pattern(
+        x,
+        y + 44.0 * scale,
+        4.0 * scale,
+        &[0b0010000, 0b0111110, 0b1111111, 0b1111111, 0b1111111],
+        robe,
+    );
+    draw_pixel_pattern(
+        x + 11.0 * scale,
+        y + 36.0 * scale,
+        4.0 * scale,
+        &[0b0001000, 0b0011100, 0b0011100],
+        Color::new(1.0, 0.69, 0.31, 1.0),
+    );
+    draw_rectangle(
+        x + 13.0 * scale,
+        y + 48.0 * scale,
+        4.0 * scale,
+        16.0 * scale,
+        trim,
+    );
 }
 
 fn has_face_portrait(rank: Rank) -> bool {

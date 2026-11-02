@@ -6,6 +6,9 @@ use macroquad::prelude::*;
 use vandtia::card_renderer::{self, CARD_HEIGHT, CARD_WIDTH, CardStyle};
 use vandtia::{Card, Game, PlayerPhase, Rank, Suit, TurnOutcome, simulator::play_computer_turn};
 
+#[path = "graphics/solitaire.rs"]
+mod solitaire;
+
 const CARD_GAP: f32 = 14.0;
 const ACTION_BUTTON_HEIGHT: f32 = 38.0;
 const COMPACT_ACTION_BUTTON_HEIGHT: f32 = 58.0;
@@ -16,7 +19,7 @@ const PANEL_COLOR: Color = Color::new(0.02, 0.12, 0.09, 1.0);
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Vändtia".to_owned(),
+        window_title: "Kortspel".to_owned(),
         window_width: 1100,
         window_height: 760,
         window_resizable: true,
@@ -35,12 +38,66 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (mut players, seed) = parse_args()?;
     let mut game_session = None;
+    let mut solitaire = None;
+    let mut show_menu = true;
     let mut cursor = 0usize;
     let mut selected = Vec::new();
     let mut status = INITIAL_STATUS.to_owned();
     let mut ai_next_at = 0.0;
 
     loop {
+        if show_menu {
+            draw_main_menu(screen_width(), screen_height());
+            if is_key_pressed(KeyCode::Key1) {
+                show_menu = false;
+            } else if is_key_pressed(KeyCode::Key2) {
+                solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                show_menu = false;
+            } else if is_key_pressed(KeyCode::Q) {
+                break;
+            }
+            if is_mouse_button_pressed(MouseButton::Left) {
+                let (x, y) = mouse_position();
+                if draw_button_contains(vandtia_menu_button(screen_width(), screen_height()), x, y)
+                {
+                    show_menu = false;
+                } else if draw_button_contains(
+                    solitaire_menu_option_rect(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                    show_menu = false;
+                }
+            }
+            next_frame().await;
+            continue;
+        }
+
+        if let Some(game) = solitaire.as_mut() {
+            draw_solitaire(game, screen_width(), screen_height());
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
+                solitaire = None;
+                show_menu = true;
+            } else if is_key_pressed(KeyCode::N) {
+                solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+            } else if is_mouse_button_pressed(MouseButton::Left) {
+                let (x, y) = mouse_position();
+                if draw_button_contains(
+                    solitaire_menu_button(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    solitaire = None;
+                    show_menu = true;
+                } else {
+                    handle_solitaire_click(game, x, y, screen_width(), screen_height());
+                }
+            }
+            next_frame().await;
+            continue;
+        }
+
         if game_session.is_none() {
             draw_setup_screen(players, seed.is_some(), screen_width(), screen_height());
             if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::Down) {
@@ -68,9 +125,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 game_session = Some(Game::new(players, game_seed)?);
             }
-            if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
+                show_menu = true;
+            }
+            if is_key_pressed(KeyCode::Q) {
                 break;
             }
+            next_frame().await;
+            continue;
+        }
+
+        if is_key_pressed(KeyCode::Escape) {
+            game_session = None;
+            show_menu = true;
+            cursor = 0;
+            selected.clear();
+            status = INITIAL_STATUS.to_owned();
+            ai_next_at = 0.0;
             next_frame().await;
             continue;
         }
@@ -100,16 +171,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let (mouse_x, mouse_y) = mouse_position();
             let return_to_menu = is_key_pressed(KeyCode::Enter)
                 || is_key_pressed(KeyCode::M)
+                || is_key_pressed(KeyCode::Escape)
                 || (is_mouse_button_pressed(MouseButton::Left)
                     && menu_button_contains(mouse_x, mouse_y));
             if return_to_menu {
                 game_session = None;
+                show_menu = true;
                 cursor = 0;
                 selected.clear();
                 status = INITIAL_STATUS.to_owned();
                 ai_next_at = 0.0;
             }
-            if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+            if is_key_pressed(KeyCode::Q) {
                 break;
             }
             next_frame().await;
@@ -199,7 +272,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
-            if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+            if is_key_pressed(KeyCode::Q) {
                 break;
             }
 
@@ -297,7 +370,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-        } else if is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::Escape) {
+        } else if is_key_pressed(KeyCode::Q) {
             break;
         }
 
@@ -393,6 +466,314 @@ fn random_seed() -> Result<u64, std::convert::Infallible> {
     let clock = (get_time() * 1_000_000_000.0) as u64;
     let random = u64::from(macroquad::rand::gen_range(0_u32, u32::MAX));
     Ok(clock ^ random.rotate_left(29) ^ (random << 32))
+}
+
+fn seed_or_random(seed: Option<u64>) -> Result<u64, Box<dyn std::error::Error>> {
+    match seed {
+        Some(seed) => Ok(seed),
+        None => Ok(random_seed()?),
+    }
+}
+
+fn draw_main_menu(width: f32, height: f32) {
+    clear_background(TABLE_COLOR);
+    let compact = compact_layout(width, height);
+    let title_y = if height < 520.0 {
+        height * 0.22
+    } else {
+        height * 0.28
+    };
+    draw_centered_text(
+        "KORTSPEL",
+        width / 2.0,
+        title_y,
+        if compact { 38 } else { 54 },
+        GOLD,
+    );
+    draw_centered_text(
+        "Välj ett spel",
+        width / 2.0,
+        title_y + if compact { 42.0 } else { 56.0 },
+        if compact { 20 } else { 24 },
+        WHITE,
+    );
+
+    let button_height = if compact { 62.0 } else { 58.0 };
+    let button_width = (width - 36.0).clamp(220.0, 340.0);
+    let gap = if compact { 16.0 } else { 20.0 };
+    let first_y = height * 0.52;
+    let vändtia = Rect::new(
+        (width - button_width) / 2.0,
+        first_y,
+        button_width,
+        button_height,
+    );
+    let solitaire = Rect::new(
+        (width - button_width) / 2.0,
+        first_y + button_height + gap,
+        button_width,
+        button_height,
+    );
+    draw_setup_button(vändtia, "VÄNDTIA");
+    draw_setup_button(solitaire, "PATIENS");
+    draw_centered_text(
+        "1: Vändtia     2: Patiens",
+        width / 2.0,
+        solitaire.y + solitaire.h + 34.0,
+        16,
+        LIGHTGRAY,
+    );
+}
+
+fn vandtia_menu_button(width: f32, height: f32) -> Rect {
+    let button_width = (width - 36.0).clamp(220.0, 340.0);
+    let button_height = if compact_layout(width, height) {
+        62.0
+    } else {
+        58.0
+    };
+    Rect::new(
+        (width - button_width) / 2.0,
+        height * 0.52,
+        button_width,
+        button_height,
+    )
+}
+
+fn solitaire_menu_button(width: f32, _height: f32) -> Rect {
+    let button_width = (width - 16.0).clamp(72.0, 104.0);
+    Rect::new(
+        (width - button_width - 8.0).max(0.0),
+        8.0,
+        button_width,
+        36.0,
+    )
+}
+
+fn solitaire_menu_option_rect(width: f32, height: f32) -> Rect {
+    let button = vandtia_menu_button(width, height);
+    Rect::new(
+        button.x,
+        button.y
+            + button.h
+            + if compact_layout(width, height) {
+                16.0
+            } else {
+                20.0
+            },
+        button.w,
+        button.h,
+    )
+}
+
+fn solitaire_board_layout(width: f32, height: f32) -> SolitaireBoardLayout {
+    let card_width = ((width - 28.0) / 7.4)
+        .min((height - 240.0).max(68.0) * CARD_WIDTH / (2.0 * CARD_HEIGHT))
+        .clamp(34.0, 96.0);
+    let card_height = card_width * CARD_HEIGHT / CARD_WIDTH;
+    let margin = ((width - 7.0 * card_width) / 8.0).max(2.0);
+    let columns = std::array::from_fn(|column| margin + column as f32 * (card_width + margin));
+    let top_y = 50.0;
+    let tableau_y = top_y + card_height + 18.0;
+    SolitaireBoardLayout {
+        card_width,
+        card_height,
+        columns,
+        stock: Rect::new(columns[0], top_y, card_width, card_height),
+        waste: Rect::new(columns[1], top_y, card_width, card_height),
+        foundations: std::array::from_fn(|index| {
+            Rect::new(columns[index + 3], top_y, card_width, card_height)
+        }),
+        tableau_y,
+        face_down_step: (card_height * 0.22).clamp(10.0, 20.0),
+        face_up_step: (card_height * 0.32).clamp(14.0, 30.0),
+    }
+}
+
+struct SolitaireBoardLayout {
+    card_width: f32,
+    card_height: f32,
+    columns: [f32; 7],
+    stock: Rect,
+    waste: Rect,
+    foundations: [Rect; 4],
+    tableau_y: f32,
+    face_down_step: f32,
+    face_up_step: f32,
+}
+
+fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
+    clear_background(TABLE_COLOR);
+    let layout = solitaire_board_layout(width, height);
+    draw_text(
+        "PATIENS",
+        12.0,
+        27.0,
+        if width < 500.0 { 18.0 } else { 24.0 },
+        GOLD,
+    );
+    let menu_button = solitaire_menu_button(width, height);
+    draw_button(menu_button, "MENY", true);
+    draw_slot(layout.stock);
+    if game.stock_count() > 0 {
+        card_renderer::draw_back(layout.stock, false);
+    }
+    draw_slot(layout.waste);
+    if let Some(card) = game.waste_top() {
+        card_renderer::draw_face(
+            layout.waste,
+            card,
+            CardStyle {
+                selected: game.is_waste_selected(),
+                focused: false,
+            },
+        );
+    }
+    for (index, rect) in layout.foundations.iter().enumerate() {
+        draw_slot(*rect);
+        if let Some(card) = game.foundation_top(index) {
+            card_renderer::draw_face(
+                *rect,
+                card,
+                CardStyle {
+                    selected: game.is_foundation_selected(index),
+                    focused: false,
+                },
+            );
+        }
+    }
+    for (column, cards) in game.tableau().iter().enumerate() {
+        let mut y = layout.tableau_y;
+        if cards.is_empty() {
+            draw_slot(Rect::new(
+                layout.columns[column],
+                y,
+                layout.card_width,
+                layout.card_height,
+            ));
+        }
+        for (index, card) in cards.iter().enumerate() {
+            let rect = Rect::new(
+                layout.columns[column],
+                y,
+                layout.card_width,
+                layout.card_height,
+            );
+            if card.face_up {
+                card_renderer::draw_face(
+                    rect,
+                    card.card,
+                    CardStyle {
+                        selected: game.is_tableau_selected(column, index),
+                        focused: false,
+                    },
+                );
+            } else {
+                card_renderer::draw_back(rect, false);
+            }
+            y += if card.face_up {
+                layout.face_up_step
+            } else {
+                layout.face_down_step
+            };
+        }
+    }
+    let status_y = height - 34.0;
+    draw_rectangle(0.0, status_y - 20.0, width, 54.0, PANEL_COLOR);
+    let status_size = if width < 500.0 { 12 } else { 17 };
+    let status_width = measure_text(game.status(), None, status_size, 1.0).width;
+    let scale = ((width - 16.0) / status_width.max(1.0)).min(1.0);
+    draw_text(
+        game.status(),
+        (width - status_width * scale) / 2.0,
+        status_y,
+        f32::from(status_size) * scale,
+        YELLOW,
+    );
+    draw_centered_text(
+        "Talong: dra kort   Klicka kort, sedan kolumn   M: meny   N: nytt spel",
+        width / 2.0,
+        height - 7.0,
+        11,
+        LIGHTGRAY,
+    );
+    if game.has_won() {
+        draw_centered_text("DU VANN!", width / 2.0, height / 2.0, 38, GOLD);
+        draw_centered_text(
+            "N: NYTT SPEL   M: MENY",
+            width / 2.0,
+            height / 2.0 + 34.0,
+            18,
+            WHITE,
+        );
+    }
+}
+
+fn draw_slot(rect: Rect) {
+    draw_rectangle(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        Color::new(0.02, 0.18, 0.12, 1.0),
+    );
+    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0, DARKGREEN);
+}
+
+fn handle_solitaire_click(
+    game: &mut solitaire::Solitaire,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) {
+    let layout = solitaire_board_layout(width, height);
+    if draw_button_contains(layout.stock, x, y) {
+        game.click_stock();
+        return;
+    }
+    if draw_button_contains(layout.waste, x, y) {
+        game.click_waste();
+        return;
+    }
+    for (index, rect) in layout.foundations.iter().enumerate() {
+        if draw_button_contains(*rect, x, y) {
+            game.click_foundation(index);
+            return;
+        }
+    }
+
+    for column in 0..7 {
+        if x < layout.columns[column] || x > layout.columns[column] + layout.card_width {
+            continue;
+        }
+        let cards = &game.tableau()[column];
+        if cards.is_empty() {
+            if y >= layout.tableau_y && y <= layout.tableau_y + layout.card_height {
+                game.click_empty_tableau(column);
+                return;
+            }
+            continue;
+        }
+        let mut card_y = layout.tableau_y;
+        for (index, card) in cards.iter().enumerate() {
+            let step = if card.face_up {
+                layout.face_up_step
+            } else {
+                layout.face_down_step
+            };
+            let visible_end = if index + 1 == cards.len() {
+                card_y + layout.card_height
+            } else {
+                card_y + step
+            };
+            if y >= card_y && y < visible_end {
+                game.click_tableau(column, index);
+                return;
+            }
+            card_y += step;
+        }
+    }
 }
 
 fn draw_setup_screen(players: usize, fixed_seed: bool, width: f32, height: f32) {
@@ -1448,6 +1829,30 @@ mod tests {
         assert_eq!(minus.y, plus.y);
         assert!(minus.y + minus.h < start.y);
         assert!(76.0 + 140.0 < player_cards_y(1100.0, 760.0, CARD_HEIGHT));
+    }
+
+    #[test]
+    fn game_menu_buttons_fit_narrow_and_short_screens() {
+        for (width, height) in [(280.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
+            let vändtia = vandtia_menu_button(width, height);
+            let patience = solitaire_menu_option_rect(width, height);
+            assert!(vändtia.x >= 0.0);
+            assert!(patience.x >= 0.0);
+            assert!(vändtia.x + vändtia.w <= width);
+            assert!(patience.x + patience.w <= width);
+            assert!(patience.y + patience.h < height);
+        }
+    }
+
+    #[test]
+    fn solitaire_board_and_menu_button_do_not_overlap_on_short_screens() {
+        for (width, height) in [(844.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
+            let layout = solitaire_board_layout(width, height);
+            let menu = solitaire_menu_button(width, height);
+            assert!(layout.stock.y >= menu.y + menu.h);
+            assert!(layout.columns[6] + layout.card_width <= width);
+            assert!(layout.card_width >= 34.0);
+        }
     }
 
     #[test]
