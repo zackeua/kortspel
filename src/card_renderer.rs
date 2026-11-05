@@ -902,6 +902,218 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32, theme: usize) {
         5 => draw_comic_portrait(x, y, rank, scale),
         _ => draw_classic_mascot(x, y, rank, scale),
     }
+    draw_refined_face(x, y, rank, scale, theme);
+}
+
+fn draw_refined_face(x: f32, y: f32, rank: Rank, scale: f32, theme: usize) {
+    let (skin, hair) = match theme {
+        1 => (
+            Color::new(0.94, 0.72, 0.51, 1.0),
+            Color::new(0.24, 0.15, 0.11, 1.0),
+        ),
+        2 => (
+            Color::new(1.0, 0.77, 0.59, 1.0),
+            Color::new(0.38, 0.16, 0.29, 1.0),
+        ),
+        3 => (
+            Color::new(0.87, 0.79, 0.69, 1.0),
+            Color::new(0.08, 0.15, 0.28, 1.0),
+        ),
+        4 => (
+            Color::new(0.91, 0.67, 0.43, 1.0),
+            Color::new(0.3, 0.18, 0.11, 1.0),
+        ),
+        5 => (
+            Color::new(1.0, 0.8, 0.48, 1.0),
+            Color::new(0.27, 0.15, 0.17, 1.0),
+        ),
+        _ => (
+            Color::new(1.0, 0.73, 0.43, 1.0),
+            Color::new(0.19, 0.13, 0.1, 1.0),
+        ),
+    };
+    let ink = Color::new(0.16, 0.12, 0.12, 1.0);
+    let face_x = x + 8.5 * scale;
+    let face_y = y + 13.0 * scale;
+    let accent = match theme {
+        1 => Color::new(0.76, 0.6, 0.25, 1.0),
+        2 => Color::new(0.94, 0.47, 0.27, 1.0),
+        3 => Color::new(0.13, 0.9, 0.96, 1.0),
+        4 => Color::new(0.85, 0.63, 0.22, 1.0),
+        5 => Color::new(0.96, 0.69, 0.2, 1.0),
+        _ => GOLD,
+    };
+
+    draw_ellipse(
+        x + 5.0 * scale,
+        y + 9.0 * scale,
+        25.0 * scale,
+        34.0 * scale,
+        0.0,
+        hair,
+    );
+    draw_ellipse(face_x, face_y, 18.0 * scale, 26.0 * scale, 0.0, skin);
+
+    for eye_x in [13.5, 21.5] {
+        draw_line(
+            x + (eye_x - 2.0) * scale,
+            y + 21.0 * scale,
+            x + (eye_x + 1.5) * scale,
+            y + 20.5 * scale,
+            1.0 * scale,
+            hair,
+        );
+        draw_ellipse(
+            x + (eye_x - 0.8) * scale,
+            y + 23.0 * scale,
+            1.8 * scale,
+            1.4 * scale,
+            0.0,
+            ink,
+        );
+        draw_circle(
+            x + (eye_x + 0.2) * scale,
+            y + 23.2 * scale,
+            0.35 * scale,
+            WHITE,
+        );
+    }
+
+    draw_line(
+        x + 17.5 * scale,
+        y + 25.0 * scale,
+        x + 16.8 * scale,
+        y + 29.0 * scale,
+        0.9 * scale,
+        Color::new(0.68, 0.4, 0.3, 1.0),
+    );
+
+    match rank {
+        Rank::King => {
+            let beard = match theme {
+                3 => Color::new(0.11, 0.31, 0.39, 1.0),
+                4 => Color::new(0.25, 0.15, 0.1, 1.0),
+                _ => hair,
+            };
+            draw_triangle(
+                vec2(x + 10.0 * scale, y + 31.0 * scale),
+                vec2(x + 25.0 * scale, y + 31.0 * scale),
+                vec2(x + 17.5 * scale, y + 41.0 * scale),
+                beard,
+            );
+            draw_line(
+                x + 14.5 * scale,
+                y + 31.5 * scale,
+                x + 20.5 * scale,
+                y + 31.5 * scale,
+                1.0 * scale,
+                Color::new(0.9, 0.63, 0.48, 1.0),
+            );
+        }
+        Rank::Queen => {
+            draw_ellipse(
+                x + 14.5 * scale,
+                y + 32.0 * scale,
+                6.0 * scale,
+                1.4 * scale,
+                0.0,
+                Color::new(0.67, 0.24, 0.31, 1.0),
+            );
+            for cheek_x in [11.0, 24.0] {
+                draw_ellipse(
+                    x + cheek_x * scale,
+                    y + 29.0 * scale,
+                    2.0 * scale,
+                    1.0 * scale,
+                    0.0,
+                    Color::new(0.94, 0.48, 0.44, 0.55),
+                );
+            }
+        }
+        _ => {
+            draw_line(
+                x + 14.5 * scale,
+                y + 32.0 * scale,
+                x + 17.5 * scale,
+                y + 33.0 * scale,
+                1.0 * scale,
+                ink,
+            );
+            draw_line(
+                x + 17.5 * scale,
+                y + 33.0 * scale,
+                x + 20.5 * scale,
+                y + 32.0 * scale,
+                1.0 * scale,
+                ink,
+            );
+        }
+    }
+
+    match rank {
+        Rank::Jack => {
+            let cap = match theme {
+                3 => Color::new(0.12, 0.28, 0.44, 1.0),
+                5 => Color::new(0.17, 0.47, 0.67, 1.0),
+                _ => Color::new(0.2, 0.36, 0.48, 1.0),
+            };
+            draw_ellipse(
+                x + 5.0 * scale,
+                y + 10.0 * scale,
+                25.0 * scale,
+                7.0 * scale,
+                0.0,
+                cap,
+            );
+            draw_triangle(
+                vec2(x + 19.0 * scale, y + 12.0 * scale),
+                vec2(x + 29.0 * scale, y + 3.0 * scale),
+                vec2(x + 27.0 * scale, y + 14.0 * scale),
+                accent,
+            );
+            draw_circle(x + 9.0 * scale, y + 13.0 * scale, 1.2 * scale, accent);
+        }
+        Rank::Queen | Rank::King => {
+            let base_y = if rank == Rank::Queen { 12.0 } else { 13.0 };
+            draw_rectangle(
+                x + 6.0 * scale,
+                y + base_y * scale,
+                23.0 * scale,
+                3.0 * scale,
+                accent,
+            );
+            let peaks: &[(f32, f32)] = if rank == Rank::Queen {
+                &[(7.0, 5.0), (14.0, 1.0), (21.0, 5.0)]
+            } else {
+                &[
+                    (6.0, 4.0),
+                    (12.0, 1.0),
+                    (17.5, 3.0),
+                    (23.0, 1.0),
+                    (29.0, 4.0),
+                ]
+            };
+            for (offset, peak) in peaks {
+                draw_triangle(
+                    vec2(x + (offset - 1.5) * scale, y + base_y * scale),
+                    vec2(x + *offset * scale, y + *peak * scale),
+                    vec2(x + (offset + 1.5) * scale, y + base_y * scale),
+                    accent,
+                );
+                draw_circle(
+                    x + *offset * scale,
+                    y + (*peak + 2.0) * scale,
+                    0.8 * scale,
+                    if theme == 3 {
+                        WHITE
+                    } else {
+                        Color::new(0.76, 0.2, 0.26, 1.0)
+                    },
+                );
+            }
+        }
+        _ => {}
+    }
 }
 
 fn draw_neon_portrait(x: f32, y: f32, rank: Rank, scale: f32) {

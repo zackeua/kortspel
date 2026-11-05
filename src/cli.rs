@@ -3,7 +3,8 @@ use std::{
     io::{self, Write},
 };
 
-use vandtia::{Card, Game, PlayerPhase, Rank, Suit, TurnOutcome, simulator::play_computer_turn};
+use vandtia::games::vandtia::{Game, PlayerPhase, TurnOutcome};
+use vandtia::{Card, Rank, Suit, simulator::play_computer_turn};
 
 pub fn run(player_count: usize, seed: u64) -> Result<(), Box<dyn Error>> {
     let mut game = Game::new(player_count, seed)?;

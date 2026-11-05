@@ -2,7 +2,8 @@
 
 use std::fmt;
 
-use crate::{Card, Game, MoveError, PlayerPhase, TurnOutcome};
+use crate::cards::Card;
+use crate::games::vandtia::{Game, MoveError, PlayerPhase, TurnOutcome};
 
 const MAX_TURNS_PER_GAME: usize = 100_000;
 

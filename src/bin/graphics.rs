@@ -4,14 +4,14 @@ use std::{env, process};
 
 use macroquad::prelude::*;
 use vandtia::card_renderer::{self, CARD_HEIGHT, CARD_WIDTH, CardStyle};
-use vandtia::{Card, Game, PlayerPhase, Rank, Suit, TurnOutcome, simulator::play_computer_turn};
+use vandtia::games::{
+    sjuan, solitaire,
+    vandtia::{Game, PlayerPhase, TurnOutcome},
+};
+use vandtia::{Card, Rank, Suit, simulator::play_computer_turn};
 
 #[path = "graphics/progress.rs"]
 mod progress;
-#[path = "graphics/sjuan.rs"]
-mod sjuan;
-#[path = "graphics/solitaire.rs"]
-mod solitaire;
 
 const CARD_GAP: f32 = 14.0;
 const ACTION_BUTTON_HEIGHT: f32 = 38.0;

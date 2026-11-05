@@ -1,4 +1,4 @@
-use vandtia::{Card, Rank, Suit, cards::standard_deck};
+use crate::cards::{Card, Rank, Suit, standard_deck};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableauCard {

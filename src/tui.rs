@@ -17,9 +17,8 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
-use vandtia::{
-    Card, Game, MoveError, PlayerPhase, Rank, Suit, TurnOutcome, simulator::play_computer_turn,
-};
+use vandtia::games::vandtia::{Game, MoveError, PlayerPhase, TurnOutcome};
+use vandtia::{Card, Rank, Suit, simulator::play_computer_turn};
 
 type AppResult<T> = Result<T, Box<dyn Error>>;
 
