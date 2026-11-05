@@ -100,6 +100,39 @@ impl Solitaire {
         self.foundations.iter().all(|pile| pile.len() == 13)
     }
 
+    pub fn no_moves_before_stock_recycle(&self) -> bool {
+        if self.stock_count() > 0 || self.has_won() {
+            return false;
+        }
+
+        if self.waste.last().is_some_and(|card| {
+            self.can_move_to_foundation(*card) || self.can_move_to_tableau(*card, None)
+        }) {
+            return false;
+        }
+
+        for (column, cards) in self.tableau.iter().enumerate() {
+            let Some(first_face_up) = cards.iter().position(|card| card.face_up) else {
+                continue;
+            };
+            for index in first_face_up..cards.len() {
+                let card = cards[index].card;
+                if index + 1 == cards.len() && self.can_move_to_foundation(card) {
+                    return false;
+                }
+                if self.can_move_to_tableau(card, Some(column)) {
+                    return false;
+                }
+            }
+        }
+
+        self.foundations.iter().all(|foundation| {
+            foundation
+                .last()
+                .is_none_or(|card| !self.can_move_to_tableau(*card, None))
+        })
+    }
+
     pub fn click_stock(&mut self) {
         self.selected = None;
         if !self.stock.is_empty() {
@@ -231,15 +264,7 @@ impl Solitaire {
             self.status = "Välj ett öppet kort först.".to_owned();
             return false;
         };
-        let destination = self.tableau[column].last().map(|card| card.card);
-        let can_place = match destination {
-            None => first.rank == Rank::King,
-            Some(top) => {
-                is_red(first.suit) != is_red(top.suit)
-                    && rank_value(first.rank) + 1 == rank_value(top.rank)
-            }
-        };
-        if !can_place {
+        if !self.can_place_on_tableau(*first, column) {
             self.status = "Lägg korten i fallande ordning med växlande färg.".to_owned();
             return false;
         }
@@ -254,6 +279,36 @@ impl Solitaire {
         self.selected = None;
         self.status = "Kortet flyttades.".to_owned();
         true
+    }
+
+    fn can_move_to_foundation(&self, card: Card) -> bool {
+        let foundation = &self.foundations[suit_index(card.suit)];
+        match foundation.last() {
+            None => card.rank == Rank::Ace,
+            Some(top) => rank_value(card.rank) == rank_value(top.rank) + 1,
+        }
+    }
+
+    fn can_move_to_tableau(&self, card: Card, source_column: Option<usize>) -> bool {
+        self.tableau.iter().enumerate().any(|(column, _)| {
+            if source_column == Some(column) {
+                return false;
+            }
+            self.can_place_on_tableau(card, column)
+        })
+    }
+
+    fn can_place_on_tableau(&self, card: Card, column: usize) -> bool {
+        match self.tableau[column]
+            .last()
+            .map(|tableau_card| tableau_card.card)
+        {
+            None => card.rank == Rank::King,
+            Some(top) => {
+                is_red(card.suit) != is_red(top.suit)
+                    && rank_value(card.rank) + 1 == rank_value(top.rank)
+            }
+        }
     }
 
     fn source_cards(&self, source: Source) -> Vec<Card> {
@@ -455,5 +510,33 @@ mod tests {
         assert!(game.foundations[0].is_empty());
         assert_eq!(game.tableau[1].len(), 2);
         assert_eq!(game.tableau[1][1].card.rank, Rank::Ace);
+    }
+
+    #[test]
+    fn no_moves_are_reported_only_after_stock_is_empty() {
+        let mut game = Solitaire::new(13);
+        game.stock.clear();
+        game.waste.clear();
+        for (index, column) in game.tableau.iter_mut().enumerate() {
+            *column = vec![TableauCard {
+                card: Card {
+                    rank: Rank::King,
+                    suit: [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades][index % 4],
+                },
+                face_up: true,
+            }];
+        }
+
+        assert!(game.no_moves_before_stock_recycle());
+
+        game.stock.push(Card {
+            rank: Rank::Ace,
+            suit: Suit::Clubs,
+        });
+        assert!(!game.no_moves_before_stock_recycle());
+
+        game.stock.clear();
+        game.tableau[0].clear();
+        assert!(!game.no_moves_before_stock_recycle());
     }
 }

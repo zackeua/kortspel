@@ -91,6 +91,7 @@ pub struct Game {
     draw_pile: Vec<Card>,
     pile: Vec<Card>,
     current_player: usize,
+    first_out: Option<usize>,
     winner: Option<usize>,
     rng: SimpleRng,
 }
@@ -139,6 +140,7 @@ impl Game {
             draw_pile: deck,
             pile: Vec::new(),
             current_player,
+            first_out: None,
             winner: None,
             rng,
         })
@@ -154,6 +156,10 @@ impl Game {
 
     pub fn winner(&self) -> Option<usize> {
         self.winner
+    }
+
+    pub fn first_out(&self) -> Option<usize> {
+        self.first_out
     }
 
     pub fn pile(&self) -> &[Card] {
@@ -408,8 +414,19 @@ impl Game {
         }
 
         if !self.players[player].has_cards() {
-            self.winner = Some(player);
-        } else if !extra_turn {
+            self.first_out.get_or_insert(player);
+            if self
+                .players
+                .iter()
+                .filter(|player| player.has_cards())
+                .count()
+                == 1
+            {
+                self.winner = self.first_out;
+            }
+        }
+
+        if self.winner.is_none() && (!extra_turn || !self.players[player].has_cards()) {
             self.advance_turn();
         }
 
@@ -433,7 +450,12 @@ impl Game {
     }
 
     fn advance_turn(&mut self) {
-        self.current_player = (self.current_player + 1) % self.players.len();
+        for _ in 0..self.players.len() {
+            self.current_player = (self.current_player + 1) % self.players.len();
+            if self.players[self.current_player].has_cards() {
+                break;
+            }
+        }
     }
 }
 
@@ -649,5 +671,41 @@ mod tests {
         assert!(!outcome.burned);
         assert!(!outcome.extra_turn);
         assert_eq!(game.face_down_count(0), Some(1));
+    }
+
+    #[test]
+    fn game_continues_after_first_player_finishes_and_skips_them() {
+        let mut game = Game::new(3, 5).unwrap();
+        game.current_player = 0;
+        game.draw_pile.clear();
+        game.pile = vec![card(Rank::Seven, Suit::Clubs)];
+        for player in &mut game.players {
+            player.hand.clear();
+            player.face_up.clear();
+            player.face_down.clear();
+        }
+        game.players[0].hand = vec![card(Rank::Eight, Suit::Hearts)];
+        game.players[1].hand = vec![
+            card(Rank::Nine, Suit::Spades),
+            card(Rank::Ten, Suit::Diamonds),
+        ];
+        game.players[2].hand = vec![
+            card(Rank::Jack, Suit::Hearts),
+            card(Rank::Queen, Suit::Clubs),
+        ];
+
+        game.play_hand(0).unwrap();
+        assert_eq!(game.first_out(), Some(0));
+        assert_eq!(game.winner(), None);
+        assert_eq!(game.current_player(), 1);
+
+        game.play_hand(0).unwrap();
+        assert_eq!(game.current_player(), 2);
+        game.play_hand(0).unwrap();
+        assert_eq!(game.current_player(), 1);
+        game.play_hand(0).unwrap();
+
+        assert_eq!(game.winner(), Some(0));
+        assert_eq!(game.current_player(), 1);
     }
 }

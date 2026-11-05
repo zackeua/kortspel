@@ -646,6 +646,31 @@ var importObject = {
         rand: function () {
             return Math.floor(Math.random() * 2147483647);
         },
+        load_progress: function (destination, capacity) {
+            try {
+                var saved = window.localStorage.getItem("vandtia-progress");
+                if (saved === null) return -1;
+                var encoded = new TextEncoder().encode(saved);
+                if (encoded.length > (capacity >>> 0)) return -3;
+                getArray(destination >>> 0, Uint8Array, encoded.length).set(encoded);
+                return encoded.length;
+            } catch (error) {
+                console.error("Could not load Vändtia progress:", error);
+                return -2;
+            }
+        },
+        store_progress: function (data, length) {
+            try {
+                window.localStorage.setItem(
+                    "vandtia-progress",
+                    UTF8ToString(data >>> 0, length >>> 0)
+                );
+                return 0;
+            } catch (error) {
+                console.error("Could not save Vändtia progress:", error);
+                return -1;
+            }
+        },
         now: function () {
             return Date.now() / 1000.0;
         },

@@ -6,6 +6,10 @@ use macroquad::prelude::*;
 use vandtia::card_renderer::{self, CARD_HEIGHT, CARD_WIDTH, CardStyle};
 use vandtia::{Card, Game, PlayerPhase, Rank, Suit, TurnOutcome, simulator::play_computer_turn};
 
+#[path = "graphics/progress.rs"]
+mod progress;
+#[path = "graphics/sjuan.rs"]
+mod sjuan;
 #[path = "graphics/solitaire.rs"]
 mod solitaire;
 
@@ -37,9 +41,19 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (mut players, seed) = parse_args()?;
+    let mut progress = progress::load()?;
     let mut game_session = None;
     let mut solitaire = None;
+    let mut sjuan = None;
+    let mut solitaire_rewarded = false;
+    let mut sjuan_rewarded = false;
+    let mut vandtia_rewarded = false;
+    let mut sjuan_cursor = 0usize;
+    let mut sjuan_status = "Lägg en sjua först. Bygg sedan vidare i samma färg.".to_owned();
+    let mut shop_status = "Välj en stil för att köpa eller utrusta den.".to_owned();
     let mut show_card_gallery = false;
+    let mut show_shop = false;
+    let mut shop_front_tab = true;
     let mut card_gallery_size = 1usize;
     let mut show_menu = true;
     let mut cursor = 0usize;
@@ -49,13 +63,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         if show_menu {
-            draw_main_menu(screen_width(), screen_height());
+            draw_main_menu(screen_width(), screen_height(), &progress);
             if is_key_pressed(KeyCode::Key1) {
                 show_menu = false;
             } else if is_key_pressed(KeyCode::Key2) {
-                solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                sjuan = Some(sjuan::Sjuan::new(players, seed_or_random(seed)?)?);
+                sjuan_rewarded = false;
+                sjuan_cursor = 0;
+                ai_next_at = 0.0;
                 show_menu = false;
             } else if is_key_pressed(KeyCode::Key3) {
+                solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                solitaire_rewarded = false;
+                show_menu = false;
+            } else if is_key_pressed(KeyCode::Key4) {
+                show_shop = true;
+                show_menu = false;
+            } else if is_key_pressed(KeyCode::Key5) {
                 show_card_gallery = true;
                 show_menu = false;
             } else if is_key_pressed(KeyCode::Q) {
@@ -67,11 +91,29 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     show_menu = false;
                 } else if draw_button_contains(
+                    sjuan_menu_option_rect(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    sjuan = Some(sjuan::Sjuan::new(players, seed_or_random(seed)?)?);
+                    sjuan_rewarded = false;
+                    sjuan_cursor = 0;
+                    ai_next_at = 0.0;
+                    show_menu = false;
+                } else if draw_button_contains(
                     solitaire_menu_option_rect(screen_width(), screen_height()),
                     x,
                     y,
                 ) {
                     solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                    solitaire_rewarded = false;
+                    show_menu = false;
+                } else if draw_button_contains(
+                    shop_menu_option_rect(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    show_shop = true;
                     show_menu = false;
                 } else if draw_button_contains(
                     card_gallery_menu_option_rect(screen_width(), screen_height()),
@@ -86,8 +128,60 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
+        if show_shop {
+            draw_shop(
+                screen_width(),
+                screen_height(),
+                &progress,
+                shop_front_tab,
+                &shop_status,
+            );
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
+                show_shop = false;
+                show_menu = true;
+            }
+            if is_mouse_button_pressed(MouseButton::Left) {
+                let (x, y) = mouse_position();
+                if draw_button_contains(
+                    card_gallery_menu_button(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    show_shop = false;
+                    show_menu = true;
+                } else if let Some(tab) = shop_tab_at(x, y, screen_width()) {
+                    shop_front_tab = tab;
+                } else if let Some(theme) = shop_choice_at(x, y, screen_width(), screen_height()) {
+                    let result = if shop_front_tab {
+                        progress.buy_or_equip_front(theme)
+                    } else {
+                        progress.buy_or_equip_back(theme)
+                    };
+                    match result {
+                        Ok(true) => {
+                            shop_status = if shop_front_tab {
+                                format!("Framsidans stil {} är vald.", theme + 1)
+                            } else {
+                                format!("Baksidans stil {} är vald.", theme + 1)
+                            };
+                            progress::save(&progress)?;
+                        }
+                        Ok(false) => {}
+                        Err(error) => shop_status = error.to_owned(),
+                    }
+                }
+            }
+            next_frame().await;
+            continue;
+        }
+
         if show_card_gallery {
-            draw_card_gallery(screen_width(), screen_height(), card_gallery_size);
+            draw_card_gallery(
+                screen_width(),
+                screen_height(),
+                card_gallery_size,
+                &progress,
+            );
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
                 show_card_gallery = false;
                 show_menu = true;
@@ -123,12 +217,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(game) = solitaire.as_mut() {
-            draw_solitaire(game, screen_width(), screen_height());
+            draw_solitaire(game, screen_width(), screen_height(), &progress);
+            if game.has_won() && !solitaire_rewarded {
+                progress.award(15);
+                progress::save(&progress)?;
+                solitaire_rewarded = true;
+            }
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
                 solitaire = None;
                 show_menu = true;
             } else if is_key_pressed(KeyCode::N) {
                 solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                solitaire_rewarded = false;
             } else if is_mouse_button_pressed(MouseButton::Left) {
                 let (x, y) = mouse_position();
                 if draw_button_contains(
@@ -141,6 +241,121 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     handle_solitaire_click(game, x, y, screen_width(), screen_height());
                 }
+            }
+            next_frame().await;
+            continue;
+        }
+
+        let mut leave_sjuan = false;
+        let mut restart_sjuan = false;
+        if let Some(game) = sjuan.as_mut() {
+            if game.winner().is_none() && game.current_player() != 0 && get_time() >= ai_next_at {
+                let player = game.current_player();
+                if let Some(index) = game.legal_indices().first().copied() {
+                    game.play(index).map_err(|error| error.to_owned())?;
+                    sjuan_status = format!("Bot {} lade ett kort.", player + 1);
+                } else {
+                    game.pass().map_err(|error| error.to_owned())?;
+                    sjuan_status = format!(
+                        "Bot {} passar; de andra aktiva spelarna ger ett kort.",
+                        player + 1
+                    );
+                }
+                ai_next_at = get_time() + NEXT_TURN_DELAY;
+            }
+            if game.winner() == Some(0) && !sjuan_rewarded {
+                progress.award(20);
+                progress::save(&progress)?;
+                sjuan_rewarded = true;
+                sjuan_status = "Du vann Sjuan! +20 mynt.".to_owned();
+            }
+            draw_sjuan(
+                game,
+                sjuan_cursor,
+                &sjuan_status,
+                screen_width(),
+                screen_height(),
+                &progress,
+            );
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
+                leave_sjuan = true;
+                show_menu = true;
+            } else if is_key_pressed(KeyCode::N) {
+                restart_sjuan = true;
+            } else if is_mouse_button_pressed(MouseButton::Left)
+                && draw_button_contains(
+                    solitaire_menu_button(screen_width(), screen_height()),
+                    mouse_position().0,
+                    mouse_position().1,
+                )
+            {
+                leave_sjuan = true;
+                show_menu = true;
+            } else if game.winner().is_none() && game.current_player() == 0 {
+                let legal = game.legal_indices();
+                if !legal.is_empty() {
+                    sjuan_cursor = sjuan_cursor.min(legal.len() - 1);
+                    if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::Up) {
+                        sjuan_cursor = sjuan_cursor.saturating_sub(1);
+                    }
+                    if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::Down) {
+                        sjuan_cursor = (sjuan_cursor + 1).min(legal.len() - 1);
+                    }
+                    if is_key_pressed(KeyCode::Enter) {
+                        let card_index = legal[sjuan_cursor];
+                        game.play(card_index).map_err(|error| error.to_owned())?;
+                        ai_next_at = get_time() + NEXT_TURN_DELAY;
+                    }
+                }
+                if is_key_pressed(KeyCode::Space) && legal.is_empty() {
+                    game.pass().map_err(|error| error.to_owned())?;
+                    sjuan_status =
+                        "Du passar; de andra aktiva spelarna ger dig ett kort.".to_owned();
+                    ai_next_at = get_time() + NEXT_TURN_DELAY;
+                }
+                if is_mouse_button_pressed(MouseButton::Left) {
+                    let (x, y) = mouse_position();
+                    if draw_button_contains(
+                        sjuan_pass_button(screen_width(), screen_height()),
+                        x,
+                        y,
+                    ) {
+                        if legal.is_empty() {
+                            game.pass().map_err(|error| error.to_owned())?;
+                            sjuan_status =
+                                "Du passar; de andra aktiva spelarna ger dig ett kort.".to_owned();
+                            ai_next_at = get_time() + NEXT_TURN_DELAY;
+                        } else {
+                            sjuan_status = "Du måste lägga ett kort om du kan.".to_owned();
+                        }
+                    } else if let Some(index) = sjuan_card_at(
+                        x,
+                        y,
+                        game.hand(0).unwrap_or(&[]).len(),
+                        screen_width(),
+                        screen_height(),
+                    ) {
+                        if let Some(legal_index) = legal.iter().position(|card| *card == index) {
+                            sjuan_cursor = legal_index;
+                            game.play(index).map_err(|error| error.to_owned())?;
+                            ai_next_at = get_time() + NEXT_TURN_DELAY;
+                        } else {
+                            sjuan_status = "Det kortet kan inte läggas ännu.".to_owned();
+                        }
+                    }
+                }
+            }
+            if is_key_pressed(KeyCode::Q) {
+                break;
+            }
+            if leave_sjuan {
+                sjuan = None;
+            } else if restart_sjuan {
+                sjuan = Some(sjuan::Sjuan::new(players, seed_or_random(seed)?)?);
+                sjuan_rewarded = false;
+                sjuan_cursor = 0;
+                sjuan_status = "Lägg en sjua först. Bygg sedan vidare i samma färg.".to_owned();
+                ai_next_at = 0.0;
             }
             next_frame().await;
             continue;
@@ -172,6 +387,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     None => random_seed()?,
                 };
                 game_session = Some(Game::new(players, game_seed)?);
+                vandtia_rewarded = false;
             }
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
                 show_menu = true;
@@ -215,7 +431,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(winner) = game.winner() {
-            draw_game_over_screen(winner, screen_width(), screen_height());
+            if winner == 0 && !vandtia_rewarded {
+                progress.award(25);
+                progress::save(&progress)?;
+                vandtia_rewarded = true;
+            }
+            draw_game_over_screen(winner, screen_width(), screen_height(), progress.coins);
             let (mouse_x, mouse_y) = mouse_position();
             let return_to_menu = is_key_pressed(KeyCode::Enter)
                 || is_key_pressed(KeyCode::M)
@@ -224,6 +445,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     && menu_button_contains(mouse_x, mouse_y));
             if return_to_menu {
                 game_session = None;
+                vandtia_rewarded = false;
                 show_menu = true;
                 cursor = 0;
                 selected.clear();
@@ -237,7 +459,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        draw_screen(game, cursor, &selected, &status);
+        draw_screen(game, cursor, &selected, &status, &progress);
 
         if current_player == 0 {
             let count = player_card_count(game, phase);
@@ -523,13 +745,57 @@ fn seed_or_random(seed: Option<u64>) -> Result<u64, Box<dyn std::error::Error>> 
     }
 }
 
-fn draw_main_menu(width: f32, height: f32) {
+fn ascii_game_text(text: &str) -> String {
+    let mut ascii = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            'å' | 'ä' => ascii.push('a'),
+            'ö' => ascii.push('o'),
+            'Å' | 'Ä' => ascii.push('A'),
+            'Ö' => ascii.push('O'),
+            'é' | 'è' | 'ê' => ascii.push('e'),
+            'É' | 'È' | 'Ê' => ascii.push('E'),
+            '•' => ascii.push('*'),
+            '–' | '—' => ascii.push('-'),
+            '→' | '➜' => ascii.push_str("->"),
+            '←' => ascii.push_str("<-"),
+            '↑' => ascii.push('^'),
+            '↓' => ascii.push('v'),
+            '×' => ascii.push('x'),
+            '…' => ascii.push_str("..."),
+            character if character.is_ascii() => ascii.push(character),
+            _ => ascii.push('?'),
+        }
+    }
+    ascii
+}
+
+fn draw_text(
+    text: impl AsRef<str>,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    color: Color,
+) -> TextDimensions {
+    macroquad::prelude::draw_text(&ascii_game_text(text.as_ref()), x, y, font_size, color)
+}
+
+fn measure_text(
+    text: impl AsRef<str>,
+    font: Option<&Font>,
+    font_size: u16,
+    font_scale: f32,
+) -> TextDimensions {
+    macroquad::prelude::measure_text(&ascii_game_text(text.as_ref()), font, font_size, font_scale)
+}
+
+fn draw_main_menu(width: f32, height: f32, progress: &progress::Progress) {
     clear_background(TABLE_COLOR);
     let compact = compact_layout(width, height);
     let title_y = if height < 520.0 {
-        height * 0.22
+        height * 0.16
     } else {
-        height * 0.28
+        height * 0.18
     };
     draw_centered_text(
         "KORTSPEL",
@@ -541,62 +807,50 @@ fn draw_main_menu(width: f32, height: f32) {
     draw_centered_text(
         "Välj ett spel",
         width / 2.0,
-        title_y + if compact { 42.0 } else { 56.0 },
+        title_y + if compact { 32.0 } else { 42.0 },
         if compact { 20 } else { 24 },
         WHITE,
     );
-
-    let button_height = if compact { 62.0 } else { 58.0 };
-    let button_width = (width - 36.0).clamp(220.0, 340.0);
-    let gap = if compact { 16.0 } else { 20.0 };
-    let first_y = height * if height < 520.0 { 0.36 } else { 0.52 };
-    let vändtia = Rect::new(
-        (width - button_width) / 2.0,
-        first_y,
-        button_width,
-        button_height,
-    );
-    let solitaire = Rect::new(
-        (width - button_width) / 2.0,
-        first_y + button_height + gap,
-        button_width,
-        button_height,
-    );
-    let gallery = Rect::new(
-        (width - button_width) / 2.0,
-        first_y + 2.0 * (button_height + gap),
-        button_width,
-        button_height,
-    );
-    draw_setup_button(vändtia, "VÄNDTIA");
-    draw_setup_button(solitaire, "PATIENS");
-    draw_setup_button(gallery, "KORTGALLERI");
+    let labels = ["VÄNDTIA", "SJUAN", "PATIENS", "KORTBUTIK", "KORTGALLERI"];
+    for (rect, label) in main_menu_buttons(width, height).into_iter().zip(labels) {
+        draw_button(rect, label, true);
+    }
     draw_centered_text(
-        if compact {
-            "1: Vändtia   2: Patiens   3: Galleri"
-        } else {
-            "1: Vändtia     2: Patiens     3: Kortgalleri"
-        },
+        &format!("{} mynt  •  1–5: välj  •  Q: avsluta", progress.coins),
         width / 2.0,
-        gallery.y + gallery.h + 28.0,
+        height - 8.0,
         if compact { 12 } else { 16 },
         LIGHTGRAY,
     );
 }
 
-fn vandtia_menu_button(width: f32, height: f32) -> Rect {
-    let button_width = (width - 36.0).clamp(220.0, 340.0);
-    let button_height = if compact_layout(width, height) {
-        62.0
+fn main_menu_buttons(width: f32, height: f32) -> [Rect; 5] {
+    let button_width = (width - 24.0).clamp(160.0, 340.0).min(width - 12.0);
+    let button_height = ((height - 240.0) / 5.0).clamp(30.0, 58.0);
+    let gap = 8.0;
+    let total_height = 5.0 * button_height + 4.0 * gap;
+    let title_y = if height < 520.0 {
+        height * 0.16
     } else {
-        58.0
+        height * 0.18
     };
-    Rect::new(
-        (width - button_width) / 2.0,
-        height * if height < 520.0 { 0.36 } else { 0.52 },
-        button_width,
-        button_height,
-    )
+    let first_y = ((height - total_height) / 2.0 + 45.0).max(title_y + 72.0);
+    std::array::from_fn(|index| {
+        Rect::new(
+            (width - button_width) / 2.0,
+            first_y + index as f32 * (button_height + gap),
+            button_width,
+            button_height,
+        )
+    })
+}
+
+fn vandtia_menu_button(width: f32, height: f32) -> Rect {
+    main_menu_buttons(width, height)[0]
+}
+
+fn sjuan_menu_option_rect(width: f32, height: f32) -> Rect {
+    main_menu_buttons(width, height)[1]
 }
 
 fn solitaire_menu_button(width: f32, _height: f32) -> Rect {
@@ -610,35 +864,15 @@ fn solitaire_menu_button(width: f32, _height: f32) -> Rect {
 }
 
 fn solitaire_menu_option_rect(width: f32, height: f32) -> Rect {
-    let button = vandtia_menu_button(width, height);
-    Rect::new(
-        button.x,
-        button.y
-            + button.h
-            + if compact_layout(width, height) {
-                16.0
-            } else {
-                20.0
-            },
-        button.w,
-        button.h,
-    )
+    main_menu_buttons(width, height)[2]
+}
+
+fn shop_menu_option_rect(width: f32, height: f32) -> Rect {
+    main_menu_buttons(width, height)[3]
 }
 
 fn card_gallery_menu_option_rect(width: f32, height: f32) -> Rect {
-    let button = solitaire_menu_option_rect(width, height);
-    Rect::new(
-        button.x,
-        button.y
-            + button.h
-            + if compact_layout(width, height) {
-                16.0
-            } else {
-                20.0
-            },
-        button.w,
-        button.h,
-    )
+    main_menu_buttons(width, height)[4]
 }
 
 fn card_gallery_menu_button(width: f32, _height: f32) -> Rect {
@@ -686,7 +920,7 @@ fn card_gallery_layout(width: f32, height: f32, size: usize) -> (f32, f32, f32) 
     (card_width, card_height, gap.max(0.0))
 }
 
-fn draw_card_gallery(width: f32, height: f32, selected_size: usize) {
+fn draw_card_gallery(width: f32, height: f32, selected_size: usize, progress: &progress::Progress) {
     clear_background(TABLE_COLOR);
     draw_centered_text(
         "KORTGALLERI",
@@ -722,22 +956,447 @@ fn draw_card_gallery(width: f32, height: f32, selected_size: usize) {
         let row = index / 13;
         let x = 14.0 + column as f32 * (card_width + gap);
         let y = start_y + row as f32 * (card_height + row_gap);
-        card_renderer::draw_face(
+        card_renderer::draw_face_with_theme(
             Rect::new(x, y, card_width, card_height),
             card,
             CardStyle::default(),
+            progress.front_theme,
         );
     }
 
     let menu = card_gallery_menu_button(width, height);
     draw_button(menu, "MENY", true);
     draw_centered_text(
-        "52 kort • Klicka storlek eller använd 1/2/3 • M: meny",
+        "52 kort • Kortbutiken ändrar utseendet • M: meny",
         width / 2.0,
         height - 8.0,
         13,
         LIGHTGRAY,
     );
+}
+
+fn shop_tab_buttons(width: f32) -> [Rect; 2] {
+    let button_width = ((width - 100.0) / 2.0).clamp(72.0, 180.0);
+    let gap = 8.0;
+    let start_x = (width - button_width * 2.0 - gap) / 2.0;
+    [
+        Rect::new(start_x, 68.0, button_width, 32.0),
+        Rect::new(start_x + button_width + gap, 68.0, button_width, 32.0),
+    ]
+}
+
+fn shop_tab_at(x: f32, y: f32, width: f32) -> Option<bool> {
+    shop_tab_buttons(width)
+        .into_iter()
+        .enumerate()
+        .find_map(|(index, rect)| draw_button_contains(rect, x, y).then_some(index == 0))
+}
+
+fn shop_choice_rects(width: f32, height: f32) -> [Rect; 6] {
+    let margin = 10.0;
+    let gap_x = 6.0;
+    let gap_y = 8.0;
+    let item_width = (width - margin * 2.0 - gap_x * 2.0) / 3.0;
+    let item_height = ((height - 205.0) / 2.0).clamp(56.0, 112.0);
+    let start_y = 108.0;
+    std::array::from_fn(|index| {
+        let row = index / 3;
+        let column = index % 3;
+        Rect::new(
+            margin + column as f32 * (item_width + gap_x),
+            start_y + row as f32 * (item_height + gap_y),
+            item_width,
+            item_height,
+        )
+    })
+}
+
+fn shop_choice_at(x: f32, y: f32, width: f32, height: f32) -> Option<usize> {
+    shop_choice_rects(width, height)
+        .into_iter()
+        .enumerate()
+        .find_map(|(index, rect)| draw_button_contains(rect, x, y).then_some(index))
+}
+
+fn draw_shop(
+    width: f32,
+    height: f32,
+    progress: &progress::Progress,
+    front_tab: bool,
+    status: &str,
+) {
+    clear_background(TABLE_COLOR);
+    draw_centered_text(
+        "KORTBUTIK",
+        width / 2.0,
+        36.0,
+        if compact_layout(width, height) {
+            24
+        } else {
+            30
+        },
+        GOLD,
+    );
+    draw_centered_text(
+        &format!("Plånbok: {} mynt", progress.coins),
+        width / 2.0,
+        64.0,
+        18,
+        YELLOW,
+    );
+    for (index, rect) in shop_tab_buttons(width).into_iter().enumerate() {
+        draw_button(
+            rect,
+            if index == 0 { "FRAMSIDA" } else { "BAKSIDA" },
+            (index == 0) == front_tab,
+        );
+    }
+
+    let number_sample = Card {
+        rank: Rank::Seven,
+        suit: Suit::Hearts,
+    };
+    let face_sample = Card {
+        rank: Rank::Queen,
+        suit: Suit::Diamonds,
+    };
+    let names = if front_tab {
+        [
+            "KLASSISK",
+            "SKOGSSAGA",
+            "SOLNEDGÅNG",
+            "CYBERPUNK",
+            "KUNGLIG",
+            "SERIEFIGUR",
+        ]
+    } else {
+        [
+            "MOSAIC",
+            "LÖVVERK",
+            "SOLSTRÅLAR",
+            "KRETSKORT",
+            "KOMPASS",
+            "KARAMELL",
+        ]
+    };
+    let prices = if front_tab {
+        &progress::FRONT_PRICES
+    } else {
+        &progress::BACK_PRICES
+    };
+    for (theme, rect) in shop_choice_rects(width, height).into_iter().enumerate() {
+        let owned = if front_tab {
+            progress.owns_front(theme)
+        } else {
+            progress.owns_back(theme)
+        };
+        let selected = if front_tab {
+            progress.front_theme == theme
+        } else {
+            progress.back_theme == theme
+        };
+        draw_rectangle(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            Color::new(0.02, 0.14, 0.1, 1.0),
+        );
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            2.0,
+            if selected { GOLD } else { DARKGREEN },
+        );
+        let preview_width = (rect.w * 0.38)
+            .min(rect.h * CARD_WIDTH / CARD_HEIGHT * 0.72)
+            .max(18.0);
+        let preview_height = preview_width * CARD_HEIGHT / CARD_WIDTH;
+        let preview_x = rect.x + 5.0;
+        let preview_y = rect.y + (rect.h - preview_height) / 2.0;
+        if front_tab {
+            card_renderer::draw_face_with_theme(
+                Rect::new(preview_x, preview_y, preview_width, preview_height),
+                number_sample,
+                CardStyle::default(),
+                theme,
+            );
+            let face_width = preview_width * 0.78;
+            card_renderer::draw_face_with_theme(
+                Rect::new(
+                    preview_x + preview_width * 0.62,
+                    preview_y + preview_height * 0.12,
+                    face_width,
+                    preview_height * 0.78,
+                ),
+                face_sample,
+                CardStyle::default(),
+                theme,
+            );
+        } else {
+            card_renderer::draw_back_with_theme(
+                Rect::new(preview_x, preview_y, preview_width, preview_height),
+                false,
+                theme,
+            );
+        }
+        let label_x = rect.x + rect.w * 0.48;
+        let label_size = if width < 400.0 { 8.0 } else { 11.0 };
+        draw_text(
+            names[theme],
+            label_x,
+            rect.y + rect.h * 0.43,
+            label_size,
+            WHITE,
+        );
+        let action = if selected {
+            "VALD".to_owned()
+        } else if owned {
+            "VÄLJ".to_owned()
+        } else {
+            format!("{} MYNT", prices[theme])
+        };
+        draw_text(
+            &action,
+            label_x,
+            rect.y + rect.h * 0.7,
+            label_size,
+            if owned { YELLOW } else { LIGHTGRAY },
+        );
+    }
+
+    let menu = card_gallery_menu_button(width, height);
+    draw_button(menu, "MENY", true);
+    draw_centered_text(
+        status,
+        width / 2.0,
+        height - 20.0,
+        13,
+        if status.contains("inte") {
+            YELLOW
+        } else {
+            LIGHTGRAY
+        },
+    );
+    draw_centered_text(
+        "Sex unika stilar • Köp eller välj • M: meny",
+        width / 2.0,
+        height - 4.0,
+        10,
+        LIGHTGRAY,
+    );
+}
+
+fn sjuan_board_layout(width: f32, height: f32) -> (f32, f32, f32, f32) {
+    let card_width = ((width - 54.0) / 13.0)
+        .min(((height - 270.0).max(80.0) / 4.0) * CARD_WIDTH / CARD_HEIGHT)
+        .clamp(14.0, 70.0);
+    let card_height = card_width * CARD_HEIGHT / CARD_WIDTH;
+    let start_x = 40.0 + (width - 48.0 - card_width * 13.0).max(0.0) / 2.0;
+    (card_width, card_height, start_x, 72.0)
+}
+
+fn sjuan_hand_layout(count: usize, width: f32, height: f32) -> (f32, f32, f32) {
+    let card_height = (height * 0.16).clamp(60.0, 110.0);
+    let natural_width = card_height * CARD_WIDTH / CARD_HEIGHT;
+    let card_width = natural_width.min((width - 20.0).max(1.0));
+    let gap = if count > 1 {
+        ((width - 20.0 - card_width) / (count - 1) as f32 - card_width).min(8.0)
+    } else {
+        0.0
+    };
+    let total_width = if count == 0 {
+        0.0
+    } else {
+        card_width * count as f32 + gap * count.saturating_sub(1) as f32
+    };
+    let start_x = ((width - total_width) / 2.0).max(10.0);
+    (card_width, gap, start_x)
+}
+
+fn sjuan_hand_y(height: f32, card_width: f32) -> f32 {
+    height - card_width * CARD_HEIGHT / CARD_WIDTH - 100.0
+}
+
+fn sjuan_card_at(x: f32, y: f32, count: usize, width: f32, height: f32) -> Option<usize> {
+    let (card_width, gap, start_x) = sjuan_hand_layout(count, width, height);
+    let card_y = sjuan_hand_y(height, card_width);
+    (0..count).rev().find(|index| {
+        let card_x = start_x + *index as f32 * (card_width + gap);
+        x >= card_x
+            && x <= card_x + card_width
+            && y >= card_y
+            && y <= card_y + card_width * CARD_HEIGHT / CARD_WIDTH
+    })
+}
+
+fn sjuan_pass_button(width: f32, height: f32) -> Rect {
+    Rect::new((width - 130.0) / 2.0, height - 62.0, 130.0, 48.0)
+}
+
+fn draw_sjuan(
+    game: &sjuan::Sjuan,
+    cursor: usize,
+    status: &str,
+    width: f32,
+    height: f32,
+    progress: &progress::Progress,
+) {
+    clear_background(TABLE_COLOR);
+    draw_text(
+        "SJUAN",
+        12.0,
+        27.0,
+        if compact_layout(width, height) {
+            20.0
+        } else {
+            26.0
+        },
+        GOLD,
+    );
+    draw_text(
+        &format!("{} mynt", progress.coins),
+        100.0,
+        26.0,
+        16.0,
+        YELLOW,
+    );
+    let menu = solitaire_menu_button(width, height);
+    draw_button(menu, "MENY", true);
+
+    let suits = [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades];
+    let ranks = [
+        Rank::Ace,
+        Rank::Two,
+        Rank::Three,
+        Rank::Four,
+        Rank::Five,
+        Rank::Six,
+        Rank::Seven,
+        Rank::Eight,
+        Rank::Nine,
+        Rank::Ten,
+        Rank::Jack,
+        Rank::Queen,
+        Rank::King,
+    ];
+    let (card_width, card_height, start_x, start_y) = sjuan_board_layout(width, height);
+    let row_gap = (card_height * 0.12).max(3.0);
+    for (row, suit) in suits.into_iter().enumerate() {
+        let y = start_y + row as f32 * (card_height + row_gap);
+        draw_text(
+            match suit {
+                Suit::Clubs => "K",
+                Suit::Diamonds => "R",
+                Suit::Hearts => "H",
+                Suit::Spades => "S",
+            },
+            12.0,
+            y + card_height * 0.66,
+            (card_height * 0.5).clamp(12.0, 24.0),
+            match suit {
+                Suit::Diamonds | Suit::Hearts => RED,
+                _ => WHITE,
+            },
+        );
+        for (column, rank) in ranks.iter().copied().enumerate() {
+            let rect = Rect::new(
+                start_x + column as f32 * card_width,
+                y,
+                card_width - 2.0,
+                card_height,
+            );
+            if game.has_card(suit, rank) {
+                card_renderer::draw_face_with_theme(
+                    rect,
+                    Card { rank, suit },
+                    CardStyle::default(),
+                    progress.front_theme,
+                );
+            } else {
+                draw_slot(rect);
+            }
+        }
+    }
+
+    let hand = game.hand(0).unwrap_or(&[]);
+    let legal = if game.current_player() == 0 {
+        game.legal_indices()
+    } else {
+        Vec::new()
+    };
+    let (hand_card_width, hand_gap, hand_start_x) = sjuan_hand_layout(hand.len(), width, height);
+    let hand_y = sjuan_hand_y(height, hand_card_width);
+    for (index, card) in hand.iter().copied().enumerate() {
+        let is_legal = legal.contains(&index);
+        let focused = is_legal && legal.get(cursor) == Some(&index);
+        card_renderer::draw_face_with_theme(
+            Rect::new(
+                hand_start_x + index as f32 * (hand_card_width + hand_gap),
+                hand_y,
+                hand_card_width,
+                hand_card_width * CARD_HEIGHT / CARD_WIDTH,
+            ),
+            card,
+            CardStyle {
+                selected: is_legal,
+                focused,
+            },
+            progress.front_theme,
+        );
+    }
+
+    let turn = if game.current_player() == 0 {
+        "Din tur".to_owned()
+    } else {
+        format!("Bot {}:s tur", game.current_player() + 1)
+    };
+    draw_centered_text(
+        &format!("{turn}  •  {} aktiva", game.active_player_count()),
+        width / 2.0,
+        49.0,
+        15,
+        SKYBLUE,
+    );
+    let status_width = measure_text(status, None, 14, 1.0).width;
+    let status_scale = ((width - 18.0) / status_width.max(1.0)).min(1.0);
+    draw_text(
+        status,
+        (width - status_width * status_scale) / 2.0,
+        hand_y - 10.0,
+        14.0 * status_scale,
+        YELLOW,
+    );
+    let can_pass = game.winner().is_none() && legal.is_empty() && game.current_player() == 0;
+    draw_button(
+        sjuan_pass_button(width, height),
+        if can_pass { "PASSA" } else { "PASSA?" },
+        can_pass,
+    );
+    draw_centered_text(
+        "Lägg sjuor och bygg utåt i samma färg • Piltangenter/Retur • M: meny",
+        width / 2.0,
+        height - 3.0,
+        10,
+        LIGHTGRAY,
+    );
+    if let Some(winner) = game.winner() {
+        let message = if winner == 0 {
+            "DU VANN SJUAN! +20 MYNT"
+        } else {
+            "SPELET ÄR SLUT"
+        };
+        draw_centered_text(message, width / 2.0, height / 2.0, 30, GOLD);
+        draw_centered_text(
+            "N: NYTT SPEL   M: MENY",
+            width / 2.0,
+            height / 2.0 + 34.0,
+            18,
+            WHITE,
+        );
+    }
 }
 
 fn solitaire_board_layout(width: f32, height: f32) -> SolitaireBoardLayout {
@@ -776,7 +1435,12 @@ struct SolitaireBoardLayout {
     face_up_step: f32,
 }
 
-fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
+fn draw_solitaire(
+    game: &solitaire::Solitaire,
+    width: f32,
+    height: f32,
+    progress: &progress::Progress,
+) {
     clear_background(TABLE_COLOR);
     let layout = solitaire_board_layout(width, height);
     draw_text(
@@ -786,18 +1450,25 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
         if width < 500.0 { 18.0 } else { 24.0 },
         GOLD,
     );
+    draw_text(
+        &format!("{} mynt", progress.coins),
+        if width < 500.0 { 92.0 } else { 150.0 },
+        26.0,
+        if width < 500.0 { 13.0 } else { 16.0 },
+        YELLOW,
+    );
     let menu_button = solitaire_menu_button(width, height);
     draw_button(menu_button, "MENY", true);
     draw_slot(layout.stock);
     if game.stock_count() > 0 {
-        card_renderer::draw_back(layout.stock, false);
+        card_renderer::draw_back_with_theme(layout.stock, false, progress.back_theme);
     }
     draw_slot(layout.waste);
     let waste_visible = game.waste_visible();
     let waste_offset = layout.card_width * 0.18;
     for (index, card) in waste_visible.iter().enumerate() {
         let is_top = index + 1 == waste_visible.len();
-        card_renderer::draw_face(
+        card_renderer::draw_face_with_theme(
             Rect::new(
                 layout.waste.x + index as f32 * waste_offset,
                 layout.waste.y,
@@ -809,18 +1480,20 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
                 selected: is_top && game.is_waste_selected(),
                 focused: false,
             },
+            progress.front_theme,
         );
     }
     for (index, rect) in layout.foundations.iter().enumerate() {
         draw_slot(*rect);
         if let Some(card) = game.foundation_top(index) {
-            card_renderer::draw_face(
+            card_renderer::draw_face_with_theme(
                 *rect,
                 card,
                 CardStyle {
                     selected: game.is_foundation_selected(index),
                     focused: false,
                 },
+                progress.front_theme,
             );
         }
     }
@@ -842,16 +1515,17 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
                 layout.card_height,
             );
             if card.face_up {
-                card_renderer::draw_face(
+                card_renderer::draw_face_with_theme(
                     rect,
                     card.card,
                     CardStyle {
                         selected: game.is_tableau_selected(column, index),
                         focused: false,
                     },
+                    progress.front_theme,
                 );
             } else {
-                card_renderer::draw_back(rect, false);
+                card_renderer::draw_back_with_theme(rect, false, progress.back_theme);
             }
             y += if card.face_up {
                 layout.face_up_step
@@ -863,10 +1537,15 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
     let status_y = height - 34.0;
     draw_rectangle(0.0, status_y - 20.0, width, 54.0, PANEL_COLOR);
     let status_size = if width < 500.0 { 12 } else { 17 };
-    let status_width = measure_text(game.status(), None, status_size, 1.0).width;
+    let status = if game.no_moves_before_stock_recycle() {
+        "Inga drag kvar denna runda. Klicka på talongen för att blanda om."
+    } else {
+        game.status()
+    };
+    let status_width = measure_text(status, None, status_size, 1.0).width;
     let scale = ((width - 16.0) / status_width.max(1.0)).min(1.0);
     draw_text(
-        game.status(),
+        status,
         (width - status_width * scale) / 2.0,
         status_y,
         f32::from(status_size) * scale,
@@ -880,7 +1559,7 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
         LIGHTGRAY,
     );
     if game.has_won() {
-        draw_centered_text("DU VANN!", width / 2.0, height / 2.0, 38, GOLD);
+        draw_centered_text("DU VANN! +15 MYNT", width / 2.0, height / 2.0, 34, GOLD);
         draw_centered_text(
             "N: NYTT SPEL   M: MENY",
             width / 2.0,
@@ -1101,7 +1780,7 @@ fn menu_button_contains(x: f32, y: f32) -> bool {
     draw_button_contains(menu_button_rect(screen_width(), screen_height()), x, y)
 }
 
-fn draw_game_over_screen(winner: usize, width: f32, height: f32) {
+fn draw_game_over_screen(winner: usize, width: f32, height: f32, coins: u32) {
     let compact = compact_layout(width, height);
     clear_background(TABLE_COLOR);
     let title = if winner == 0 {
@@ -1117,9 +1796,9 @@ fn draw_game_over_screen(winner: usize, width: f32, height: f32) {
         GOLD,
     );
     let message = if winner == 0 {
-        "Grattis!"
+        "Du kom först ut!"
     } else {
-        "En bot vann!"
+        "Du blev sist kvar."
     };
     draw_centered_text(
         message,
@@ -1129,9 +1808,18 @@ fn draw_game_over_screen(winner: usize, width: f32, height: f32) {
         WHITE,
     );
     if winner > 0 {
-        let bot = format!("Bot {} vann", winner + 1);
+        let bot = format!("Bot {} kom först ut", winner + 1);
         draw_centered_text(&bot, width / 2.0, height * 0.50, 20, LIGHTGRAY);
+    } else {
+        draw_centered_text("Du fick 25 mynt!", width / 2.0, height * 0.50, 20, YELLOW);
     }
+    draw_centered_text(
+        &format!("Plånbok: {coins} mynt"),
+        width / 2.0,
+        height * 0.56,
+        20,
+        YELLOW,
+    );
 
     let menu_button = menu_button_rect(width, height);
     draw_setup_button(menu_button, "TILLBAKA TILL MENYN");
@@ -1177,7 +1865,13 @@ fn draw_setup_button(rect: Rect, label: &str) {
     );
 }
 
-fn draw_screen(game: &Game, cursor: usize, selected: &[usize], status: &str) {
+fn draw_screen(
+    game: &Game,
+    cursor: usize,
+    selected: &[usize],
+    status: &str,
+    progress: &progress::Progress,
+) {
     clear_background(TABLE_COLOR);
     let width = screen_width();
     let height = screen_height();
@@ -1223,15 +1917,15 @@ fn draw_screen(game: &Game, cursor: usize, selected: &[usize], status: &str) {
         SKYBLUE,
     );
 
-    draw_player_tables(game, width, height);
-    draw_pile(game, width, height, compact);
-    draw_player_cards(game, cursor, selected, width, height);
+    draw_player_tables(game, width, height, progress);
+    draw_pile(game, width, height, compact, progress);
+    draw_player_cards(game, cursor, selected, width, height, progress);
     draw_controls(game, status, width, height, compact);
 }
 
-fn draw_player_tables(game: &Game, width: f32, height: f32) {
+fn draw_player_tables(game: &Game, width: f32, height: f32, progress: &progress::Progress) {
     if compact_layout(width, height) {
-        draw_compact_player_tables(game, width);
+        draw_compact_player_tables(game, width, progress);
         return;
     }
 
@@ -1264,20 +1958,25 @@ fn draw_player_tables(game: &Game, width: f32, height: f32) {
             let card_x = x + 12.0 + slot as f32 * 58.0;
             let card_y = y + 48.0;
             if has_face_down {
-                card_renderer::draw_back(Rect::new(card_x, card_y + 5.0, 54.0, 78.0), false);
+                card_renderer::draw_back_with_theme(
+                    Rect::new(card_x, card_y + 5.0, 54.0, 78.0),
+                    false,
+                    progress.back_theme,
+                );
             }
             if let Some(card) = face_up_card {
-                card_renderer::draw_face(
+                card_renderer::draw_face_with_theme(
                     Rect::new(card_x, card_y, 54.0, 78.0),
                     card,
                     CardStyle::default(),
+                    progress.front_theme,
                 );
             }
         }
     }
 }
 
-fn draw_compact_player_tables(game: &Game, width: f32) {
+fn draw_compact_player_tables(game: &Game, width: f32, progress: &progress::Progress) {
     let columns = ((width / 170.0).floor() as usize)
         .max(1)
         .min(game.player_count());
@@ -1325,10 +2024,15 @@ fn draw_compact_player_tables(game: &Game, width: f32) {
                 34.0,
             );
             if has_face_down {
-                card_renderer::draw_back(card_rect, false);
+                card_renderer::draw_back_with_theme(card_rect, false, progress.back_theme);
             }
             if let Some(card) = face_up_card {
-                card_renderer::draw_face(card_rect, card, CardStyle::default());
+                card_renderer::draw_face_with_theme(
+                    card_rect,
+                    card,
+                    CardStyle::default(),
+                    progress.front_theme,
+                );
             }
         }
     }
@@ -1344,7 +2048,7 @@ fn table_stack_layers(face_up: &[Card], face_down_count: usize) -> [(bool, Optio
     std::array::from_fn(|index| (index < face_down_count, face_up.get(index).copied()))
 }
 
-fn draw_pile(game: &Game, width: f32, height: f32, compact: bool) {
+fn draw_pile(game: &Game, width: f32, height: f32, compact: bool, progress: &progress::Progress) {
     let pile = pile_card_rect(width, height);
     let center_x = pile.x + pile.w / 2.0;
     if !compact {
@@ -1357,7 +2061,12 @@ fn draw_pile(game: &Game, width: f32, height: f32, compact: bool) {
         );
     }
     if let Some(card) = game.pile().last() {
-        card_renderer::draw_face(pile, *card, CardStyle::default());
+        card_renderer::draw_face_with_theme(
+            pile,
+            *card,
+            CardStyle::default(),
+            progress.front_theme,
+        );
         if !compact {
             draw_centered_text(
                 &format!("{} kort i spelhögen", game.pile().len()),
@@ -1404,7 +2113,14 @@ fn pile_card_rect(width: f32, height: f32) -> Rect {
     )
 }
 
-fn draw_player_cards(game: &Game, cursor: usize, selected: &[usize], width: f32, height: f32) {
+fn draw_player_cards(
+    game: &Game,
+    cursor: usize,
+    selected: &[usize],
+    width: f32,
+    height: f32,
+    progress: &progress::Progress,
+) {
     let compact = compact_layout(width, height);
     let card_height = card_height_for_screen(width, height);
     let phase = game.player_phase(0).unwrap_or(PlayerPhase::FaceDown);
@@ -1427,7 +2143,11 @@ fn draw_player_cards(game: &Game, cursor: usize, selected: &[usize], width: f32,
         let is_selected = selected.contains(&card_index);
         let y = start_y;
         if phase == PlayerPhase::FaceDown {
-            card_renderer::draw_back(Rect::new(x, y, card_width, card_height), index == cursor);
+            card_renderer::draw_back_with_theme(
+                Rect::new(x, y, card_width, card_height),
+                index == cursor,
+                progress.back_theme,
+            );
             draw_text(
                 format!("{}", index + 1),
                 x + card_width / 2.0 - 5.0,
@@ -1436,13 +2156,14 @@ fn draw_player_cards(game: &Game, cursor: usize, selected: &[usize], width: f32,
                 LIGHTGRAY,
             );
         } else if let Some(card) = cards.get(card_index) {
-            card_renderer::draw_face(
+            card_renderer::draw_face_with_theme(
                 Rect::new(x, y, card_width, card_height),
                 *card,
                 CardStyle {
                     selected: is_selected,
                     focused: index == cursor,
                 },
+                progress.front_theme,
             );
             draw_text(
                 format!("{}", index + 1),
@@ -1720,15 +2441,12 @@ fn player_display_order(game: &Game, phase: PlayerPhase) -> Vec<usize> {
 
     let mut indices = (0..count).collect::<Vec<_>>();
     if let Some(hand) = game.hand(0) {
-        indices.sort_by_key(|index| {
-            let card = hand[*index];
-            (rank_sort_key(card.rank), suit_sort_key(card.suit))
-        });
+        indices.sort_by_key(|index| vändtia_rank_sort_key(hand[*index].rank));
     }
     indices
 }
 
-fn rank_sort_key(rank: Rank) -> u8 {
+fn vändtia_rank_sort_key(rank: Rank) -> u8 {
     match rank {
         Rank::Three => 0,
         Rank::Four => 1,
@@ -1743,15 +2461,6 @@ fn rank_sort_key(rank: Rank) -> u8 {
         Rank::Ace => 10,
         Rank::Two => 11,
         Rank::Ten => 12,
-    }
-}
-
-fn suit_sort_key(suit: Suit) -> u8 {
-    match suit {
-        Suit::Clubs => 0,
-        Suit::Diamonds => 1,
-        Suit::Hearts => 2,
-        Suit::Spades => 3,
     }
 }
 
@@ -1848,6 +2557,15 @@ fn format_outcome(actor: &str, outcome: &TurnOutcome) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_text_converts_non_ascii_glyphs_before_drawing() {
+        assert_eq!(
+            ascii_game_text("VÄNDTIA • 1–5: välj → spela"),
+            "VANDTIA * 1-5: valj -> spela"
+        );
+        assert_eq!(ascii_game_text("kort 🂡"), "kort ?");
+    }
 
     #[test]
     fn enter_uses_only_toggled_cards() {
@@ -2023,15 +2741,48 @@ mod tests {
     fn game_menu_buttons_fit_narrow_and_short_screens() {
         for (width, height) in [(280.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
             let vändtia = vandtia_menu_button(width, height);
+            let sjuan = sjuan_menu_option_rect(width, height);
             let patience = solitaire_menu_option_rect(width, height);
+            let shop = shop_menu_option_rect(width, height);
             let gallery = card_gallery_menu_option_rect(width, height);
-            assert!(vändtia.x >= 0.0);
-            assert!(patience.x >= 0.0);
-            assert!(gallery.x >= 0.0);
-            assert!(vändtia.x + vändtia.w <= width);
-            assert!(patience.x + patience.w <= width);
-            assert!(gallery.x + gallery.w <= width);
-            assert!(gallery.y + gallery.h < height);
+            let buttons = [vändtia, sjuan, patience, shop, gallery];
+            for button in buttons {
+                assert!(button.x >= 0.0);
+                assert!(button.y >= 0.0);
+                assert!(button.x + button.w <= width);
+                assert!(button.y + button.h < height - 20.0);
+            }
+            for first in 0..buttons.len() {
+                for second in first + 1..buttons.len() {
+                    assert!(
+                        buttons[first].y + buttons[first].h <= buttons[second].y,
+                        "menu buttons overlap at {width}x{height}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shop_choices_are_clickable_and_fit_narrow_screens() {
+        for (width, height) in [(280.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
+            for (theme, rect) in shop_choice_rects(width, height).into_iter().enumerate() {
+                assert!(rect.x >= 0.0);
+                assert!(rect.x + rect.w <= width);
+                assert!(rect.y + rect.h < height);
+                assert_eq!(
+                    shop_choice_at(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0, width, height),
+                    Some(theme)
+                );
+            }
+            for (tab, rect) in shop_tab_buttons(width).into_iter().enumerate() {
+                assert!(rect.x >= 0.0);
+                assert!(rect.x + rect.w <= width);
+                assert_eq!(
+                    shop_tab_at(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0, width),
+                    Some(tab == 0)
+                );
+            }
         }
     }
 
@@ -2159,26 +2910,46 @@ mod tests {
     }
 
     #[test]
-    fn hand_sort_places_twos_and_tens_after_aces() {
-        let ranks = [
-            Rank::Ace,
-            Rank::Four,
-            Rank::Ten,
-            Rank::Two,
-            Rank::King,
-            Rank::Three,
+    fn hand_sort_uses_rank_without_grouping_suits_and_places_two_and_ten_last() {
+        let cards = [
+            Card {
+                rank: Rank::Ten,
+                suit: Suit::Hearts,
+            },
+            Card {
+                rank: Rank::Ace,
+                suit: Suit::Clubs,
+            },
+            Card {
+                rank: Rank::Two,
+                suit: Suit::Clubs,
+            },
+            Card {
+                rank: Rank::Three,
+                suit: Suit::Hearts,
+            },
         ];
-        let mut sorted = ranks;
-        sorted.sort_by_key(|rank| rank_sort_key(*rank));
+        let mut sorted = cards;
+        sorted.sort_by_key(|card| vändtia_rank_sort_key(card.rank));
         assert_eq!(
             sorted,
             [
-                Rank::Three,
-                Rank::Four,
-                Rank::King,
-                Rank::Ace,
-                Rank::Two,
-                Rank::Ten
+                Card {
+                    rank: Rank::Three,
+                    suit: Suit::Hearts
+                },
+                Card {
+                    rank: Rank::Ace,
+                    suit: Suit::Clubs
+                },
+                Card {
+                    rank: Rank::Two,
+                    suit: Suit::Clubs
+                },
+                Card {
+                    rank: Rank::Ten,
+                    suit: Suit::Hearts
+                },
             ]
         );
     }
