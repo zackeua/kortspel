@@ -395,21 +395,25 @@ fn draw_card_mascot(x: f32, y: f32, rank: Rank, scale: f32) {
 fn draw_face_body(x: f32, y: f32, scale: f32, robe: Color, trim: Color) {
     draw_pixel_pattern(
         x,
-        y + 44.0 * scale,
+        y + 34.0 * scale,
         4.0 * scale,
-        &[0b0010000, 0b0111110, 0b1111111, 0b1111111, 0b1111111],
+        &[
+            0b0001000, 0b0011100, 0b0111110, 0b1111111, 0b1111111, 0b1111111, 0b1111111, 0b1111111,
+        ],
         robe,
     );
     draw_pixel_pattern(
         x + 11.0 * scale,
-        y + 36.0 * scale,
+        y + 30.0 * scale,
         4.0 * scale,
-        &[0b0001000, 0b0011100, 0b0011100],
+        &[
+            0b0001000, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100,
+        ],
         Color::new(1.0, 0.69, 0.31, 1.0),
     );
     draw_rectangle(
         x + 13.0 * scale,
-        y + 48.0 * scale,
+        y + 44.0 * scale,
         4.0 * scale,
         16.0 * scale,
         trim,

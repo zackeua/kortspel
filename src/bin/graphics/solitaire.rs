@@ -53,7 +53,7 @@ impl Solitaire {
             foundations: std::array::from_fn(|_| Vec::new()),
             tableau,
             selected: None,
-            status: "Klicka på talongen för att dra ett kort.".to_owned(),
+            status: "Klicka på talongen för att dra tre kort.".to_owned(),
         }
     }
 
@@ -61,8 +61,9 @@ impl Solitaire {
         self.stock.len()
     }
 
-    pub fn waste_top(&self) -> Option<Card> {
-        self.waste.last().copied()
+    pub fn waste_visible(&self) -> &[Card] {
+        let start = self.waste.len().saturating_sub(3);
+        &self.waste[start..]
     }
 
     pub fn tableau(&self) -> &[Vec<TableauCard>; 7] {
@@ -101,9 +102,13 @@ impl Solitaire {
 
     pub fn click_stock(&mut self) {
         self.selected = None;
-        if let Some(card) = self.stock.pop() {
-            self.waste.push(card);
-            self.status = "Kortet har dragits till slänghögen.".to_owned();
+        if !self.stock.is_empty() {
+            for _ in 0..3 {
+                if let Some(card) = self.stock.pop() {
+                    self.waste.push(card);
+                }
+            }
+            self.status = "Upp till tre kort har dragits till slänghögen.".to_owned();
         } else if !self.waste.is_empty() {
             self.stock.extend(self.waste.drain(..).rev());
             self.status = "Slänghögen har blandats tillbaka.".to_owned();
@@ -342,7 +347,7 @@ mod tests {
     #[test]
     fn drawing_then_recycling_stock_restores_all_cards() {
         let mut game = Solitaire::new(7);
-        for _ in 0..24 {
+        for _ in 0..8 {
             game.click_stock();
         }
         assert_eq!(game.stock_count(), 0);
@@ -350,6 +355,38 @@ mod tests {
         game.click_stock();
         assert_eq!(game.stock_count(), 24);
         assert!(game.waste.is_empty());
+    }
+
+    #[test]
+    fn stock_draws_three_cards_and_only_shows_the_top_three_waste_cards() {
+        let mut game = Solitaire::new(8);
+        let stock_before = game.stock.clone();
+
+        game.click_stock();
+        assert_eq!(game.stock_count(), 21);
+        assert_eq!(game.waste.len(), 3);
+        assert_eq!(
+            game.waste_visible(),
+            &[stock_before[23], stock_before[22], stock_before[21]]
+        );
+        assert_eq!(game.waste_visible().last(), Some(&stock_before[21]));
+
+        game.click_stock();
+        assert_eq!(game.stock_count(), 18);
+        assert_eq!(game.waste.len(), 6);
+        assert_eq!(game.waste_visible().len(), 3);
+    }
+
+    #[test]
+    fn final_stock_draw_contains_only_cards_left() {
+        let mut game = Solitaire::new(9);
+        for _ in 0..7 {
+            game.click_stock();
+        }
+        assert_eq!(game.stock_count(), 3);
+        game.click_stock();
+        assert_eq!(game.stock_count(), 0);
+        assert_eq!(game.waste.len(), 24);
     }
 
     #[test]

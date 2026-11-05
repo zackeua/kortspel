@@ -39,6 +39,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (mut players, seed) = parse_args()?;
     let mut game_session = None;
     let mut solitaire = None;
+    let mut show_card_gallery = false;
+    let mut card_gallery_size = 1usize;
     let mut show_menu = true;
     let mut cursor = 0usize;
     let mut selected = Vec::new();
@@ -52,6 +54,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 show_menu = false;
             } else if is_key_pressed(KeyCode::Key2) {
                 solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
+                show_menu = false;
+            } else if is_key_pressed(KeyCode::Key3) {
+                show_card_gallery = true;
                 show_menu = false;
             } else if is_key_pressed(KeyCode::Q) {
                 break;
@@ -68,6 +73,49 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ) {
                     solitaire = Some(solitaire::Solitaire::new(seed_or_random(seed)?));
                     show_menu = false;
+                } else if draw_button_contains(
+                    card_gallery_menu_option_rect(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    show_card_gallery = true;
+                    show_menu = false;
+                }
+            }
+            next_frame().await;
+            continue;
+        }
+
+        if show_card_gallery {
+            draw_card_gallery(screen_width(), screen_height(), card_gallery_size);
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
+                show_card_gallery = false;
+                show_menu = true;
+            } else if is_key_pressed(KeyCode::Key1) {
+                card_gallery_size = 0;
+            } else if is_key_pressed(KeyCode::Key2) {
+                card_gallery_size = 1;
+            } else if is_key_pressed(KeyCode::Key3) {
+                card_gallery_size = 2;
+            }
+            if is_mouse_button_pressed(MouseButton::Left) {
+                let (x, y) = mouse_position();
+                if draw_button_contains(
+                    card_gallery_menu_button(screen_width(), screen_height()),
+                    x,
+                    y,
+                ) {
+                    show_card_gallery = false;
+                    show_menu = true;
+                } else {
+                    for (size, rect) in card_gallery_size_buttons(screen_width(), screen_height())
+                        .into_iter()
+                        .enumerate()
+                    {
+                        if draw_button_contains(rect, x, y) {
+                            card_gallery_size = size;
+                        }
+                    }
                 }
             }
             next_frame().await;
@@ -501,7 +549,7 @@ fn draw_main_menu(width: f32, height: f32) {
     let button_height = if compact { 62.0 } else { 58.0 };
     let button_width = (width - 36.0).clamp(220.0, 340.0);
     let gap = if compact { 16.0 } else { 20.0 };
-    let first_y = height * 0.52;
+    let first_y = height * if height < 520.0 { 0.36 } else { 0.52 };
     let vändtia = Rect::new(
         (width - button_width) / 2.0,
         first_y,
@@ -514,13 +562,24 @@ fn draw_main_menu(width: f32, height: f32) {
         button_width,
         button_height,
     );
+    let gallery = Rect::new(
+        (width - button_width) / 2.0,
+        first_y + 2.0 * (button_height + gap),
+        button_width,
+        button_height,
+    );
     draw_setup_button(vändtia, "VÄNDTIA");
     draw_setup_button(solitaire, "PATIENS");
+    draw_setup_button(gallery, "KORTGALLERI");
     draw_centered_text(
-        "1: Vändtia     2: Patiens",
+        if compact {
+            "1: Vändtia   2: Patiens   3: Galleri"
+        } else {
+            "1: Vändtia     2: Patiens     3: Kortgalleri"
+        },
         width / 2.0,
-        solitaire.y + solitaire.h + 34.0,
-        16,
+        gallery.y + gallery.h + 28.0,
+        if compact { 12 } else { 16 },
         LIGHTGRAY,
     );
 }
@@ -534,7 +593,7 @@ fn vandtia_menu_button(width: f32, height: f32) -> Rect {
     };
     Rect::new(
         (width - button_width) / 2.0,
-        height * 0.52,
+        height * if height < 520.0 { 0.36 } else { 0.52 },
         button_width,
         button_height,
     )
@@ -564,6 +623,121 @@ fn solitaire_menu_option_rect(width: f32, height: f32) -> Rect {
         button.w,
         button.h,
     )
+}
+
+fn card_gallery_menu_option_rect(width: f32, height: f32) -> Rect {
+    let button = solitaire_menu_option_rect(width, height);
+    Rect::new(
+        button.x,
+        button.y
+            + button.h
+            + if compact_layout(width, height) {
+                16.0
+            } else {
+                20.0
+            },
+        button.w,
+        button.h,
+    )
+}
+
+fn card_gallery_menu_button(width: f32, _height: f32) -> Rect {
+    let button_width = (width - 16.0).clamp(72.0, 104.0);
+    Rect::new(
+        (width - button_width - 8.0).max(0.0),
+        8.0,
+        button_width,
+        36.0,
+    )
+}
+
+fn card_gallery_size_buttons(width: f32, height: f32) -> [Rect; 3] {
+    let button_width = (width * 0.22).clamp(72.0, 120.0);
+    let gap = 10.0;
+    let total_width = button_width * 3.0 + gap * 2.0;
+    let start_x = (width - total_width) / 2.0;
+    let y = if height < 520.0 { 44.0 } else { 62.0 };
+    std::array::from_fn(|index| {
+        Rect::new(
+            start_x + index as f32 * (button_width + gap),
+            y,
+            button_width,
+            if compact_layout(width, height) {
+                42.0
+            } else {
+                46.0
+            },
+        )
+    })
+}
+
+fn card_gallery_layout(width: f32, height: f32, size: usize) -> (f32, f32, f32) {
+    let scale = [0.45, 0.7, 1.0][size.min(2)];
+    let available_width = (width - 28.0) / 13.0;
+    let selector = card_gallery_size_buttons(width, height);
+    let grid_start = selector[0].y + selector[0].h + 18.0;
+    let available_height = (height - grid_start - 50.0) / 4.0;
+    let card_width = (CARD_WIDTH * scale)
+        .min(available_width)
+        .min(available_height * CARD_WIDTH / CARD_HEIGHT)
+        .max(1.0);
+    let card_height = card_width * CARD_HEIGHT / CARD_WIDTH;
+    let gap = ((width - 28.0 - card_width * 13.0) / 12.0).max(0.0);
+    (card_width, card_height, gap.max(0.0))
+}
+
+fn draw_card_gallery(width: f32, height: f32, selected_size: usize) {
+    clear_background(TABLE_COLOR);
+    draw_centered_text(
+        "KORTGALLERI",
+        width / 2.0,
+        if height < 520.0 { 28.0 } else { 42.0 },
+        if compact_layout(width, height) {
+            22
+        } else {
+            30
+        },
+        GOLD,
+    );
+    let labels = ["LITEN 1", "NORMAL 2", "STOR 3"];
+    for (index, rect) in card_gallery_size_buttons(width, height)
+        .into_iter()
+        .enumerate()
+    {
+        let label = if index == selected_size {
+            format!("[ {} ]", labels[index])
+        } else {
+            labels[index].to_owned()
+        };
+        draw_setup_button(rect, &label);
+    }
+
+    let (card_width, card_height, gap) = card_gallery_layout(width, height, selected_size);
+    let row_gap = if height < 520.0 { 9.0 } else { 18.0 };
+    let selector = card_gallery_size_buttons(width, height);
+    let start_y = selector[0].y + selector[0].h + 18.0;
+    let deck = vandtia::cards::standard_deck();
+    for (index, card) in deck.into_iter().enumerate() {
+        let column = index % 13;
+        let row = index / 13;
+        let x = 14.0 + column as f32 * (card_width + gap);
+        let y = start_y + row as f32 * (card_height + row_gap);
+        card_renderer::draw_face(
+            Rect::new(x, y, card_width, card_height),
+            card,
+            CardStyle::default(),
+        );
+    }
+
+    let menu = card_gallery_menu_button(width, height);
+    draw_button(menu, "MENY", true);
+    draw_centered_text(
+        "52 kort • Klicka storlek eller använd 1/2/3 • M: meny",
+        width / 2.0,
+        height - 8.0,
+        13,
+        LIGHTGRAY,
+    );
 }
 
 fn solitaire_board_layout(width: f32, height: f32) -> SolitaireBoardLayout {
@@ -619,12 +793,20 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
         card_renderer::draw_back(layout.stock, false);
     }
     draw_slot(layout.waste);
-    if let Some(card) = game.waste_top() {
+    let waste_visible = game.waste_visible();
+    let waste_offset = layout.card_width * 0.18;
+    for (index, card) in waste_visible.iter().enumerate() {
+        let is_top = index + 1 == waste_visible.len();
         card_renderer::draw_face(
-            layout.waste,
-            card,
+            Rect::new(
+                layout.waste.x + index as f32 * waste_offset,
+                layout.waste.y,
+                layout.card_width,
+                layout.card_height,
+            ),
+            *card,
             CardStyle {
-                selected: game.is_waste_selected(),
+                selected: is_top && game.is_waste_selected(),
                 focused: false,
             },
         );
@@ -691,7 +873,7 @@ fn draw_solitaire(game: &solitaire::Solitaire, width: f32, height: f32) {
         YELLOW,
     );
     draw_centered_text(
-        "Talong: dra kort   Klicka kort, sedan kolumn   M: meny   N: nytt spel",
+        "Talong: dra 3 kort   Spela översta öppna kortet   M: meny   N: nytt spel",
         width / 2.0,
         height - 7.0,
         11,
@@ -732,7 +914,13 @@ fn handle_solitaire_click(
         game.click_stock();
         return;
     }
-    if draw_button_contains(layout.waste, x, y) {
+    let waste_hit_area = Rect::new(
+        layout.waste.x,
+        layout.waste.y,
+        layout.card_width + layout.card_width * 0.18 * 2.0,
+        layout.card_height,
+    );
+    if draw_button_contains(waste_hit_area, x, y) {
         game.click_waste();
         return;
     }
@@ -1836,11 +2024,35 @@ mod tests {
         for (width, height) in [(280.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
             let vändtia = vandtia_menu_button(width, height);
             let patience = solitaire_menu_option_rect(width, height);
+            let gallery = card_gallery_menu_option_rect(width, height);
             assert!(vändtia.x >= 0.0);
             assert!(patience.x >= 0.0);
+            assert!(gallery.x >= 0.0);
             assert!(vändtia.x + vändtia.w <= width);
             assert!(patience.x + patience.w <= width);
-            assert!(patience.y + patience.h < height);
+            assert!(gallery.x + gallery.w <= width);
+            assert!(gallery.y + gallery.h < height);
+        }
+    }
+
+    #[test]
+    fn card_gallery_sizes_are_distinct_and_grid_stays_inside_viewport() {
+        let (width, height) = (1100.0, 760.0);
+        let sizes = (0..3)
+            .map(|size| card_gallery_layout(width, height, size))
+            .collect::<Vec<_>>();
+        assert!(sizes[0].0 < sizes[1].0);
+        assert!(sizes[1].0 < sizes[2].0);
+
+        for (size, (card_width, card_height, gap)) in sizes.into_iter().enumerate() {
+            assert!(card_width > 0.0);
+            assert!(card_height > 0.0);
+            assert!(gap >= 0.0);
+            let selector = card_gallery_size_buttons(width, height);
+            let start_y = selector[0].y + selector[0].h + 18.0;
+            let last_card_bottom = start_y + 3.0 * (card_height + 18.0) + card_height;
+            assert!(last_card_bottom < height - 20.0, "gallery size {size}");
+            assert!(14.0 + 12.0 * (card_width + gap) + card_width < width);
         }
     }
 
