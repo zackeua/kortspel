@@ -79,9 +79,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else if is_key_pressed(KeyCode::Key4) {
                 show_shop = true;
                 show_menu = false;
-            } else if is_key_pressed(KeyCode::Key5) {
-                show_card_gallery = true;
-                show_menu = false;
             } else if is_key_pressed(KeyCode::Q) {
                 break;
             }
@@ -115,13 +112,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ) {
                     show_shop = true;
                     show_menu = false;
-                } else if draw_button_contains(
-                    card_gallery_menu_option_rect(screen_width(), screen_height()),
-                    x,
-                    y,
-                ) {
-                    show_card_gallery = true;
-                    show_menu = false;
                 }
             }
             next_frame().await;
@@ -142,13 +132,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if is_mouse_button_pressed(MouseButton::Left) {
                 let (x, y) = mouse_position();
-                if draw_button_contains(
-                    card_gallery_menu_button(screen_width(), screen_height()),
-                    x,
-                    y,
-                ) {
+                let [menu_button, gallery_button] =
+                    shop_action_buttons(screen_width(), screen_height());
+                if draw_button_contains(menu_button, x, y) {
                     show_shop = false;
                     show_menu = true;
+                } else if draw_button_contains(gallery_button, x, y) {
+                    show_shop = false;
+                    show_card_gallery = true;
                 } else if let Some(tab) = shop_tab_at(x, y, screen_width()) {
                     shop_front_tab = tab;
                 } else if let Some(theme) = shop_choice_at(x, y, screen_width(), screen_height()) {
@@ -184,7 +175,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::M) {
                 show_card_gallery = false;
-                show_menu = true;
+                show_shop = true;
+                show_menu = false;
             } else if is_key_pressed(KeyCode::Key1) {
                 card_gallery_size = 0;
             } else if is_key_pressed(KeyCode::Key2) {
@@ -200,7 +192,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     y,
                 ) {
                     show_card_gallery = false;
-                    show_menu = true;
+                    show_shop = true;
+                    show_menu = false;
                 } else {
                     for (size, rect) in card_gallery_size_buttons(screen_width(), screen_height())
                         .into_iter()
@@ -811,12 +804,12 @@ fn draw_main_menu(width: f32, height: f32, progress: &progress::Progress) {
         if compact { 20 } else { 24 },
         WHITE,
     );
-    let labels = ["VÄNDTIA", "SJUAN", "PATIENS", "KORTBUTIK", "KORTGALLERI"];
+    let labels = ["VÄNDTIA", "SJUAN", "PATIENS", "KORTBUTIK"];
     for (rect, label) in main_menu_buttons(width, height).into_iter().zip(labels) {
         draw_button(rect, label, true);
     }
     draw_centered_text(
-        &format!("{} mynt  •  1–5: välj  •  Q: avsluta", progress.coins),
+        &format!("{} mynt  •  1–4: välj  •  Q: avsluta", progress.coins),
         width / 2.0,
         height - 8.0,
         if compact { 12 } else { 16 },
@@ -824,11 +817,11 @@ fn draw_main_menu(width: f32, height: f32, progress: &progress::Progress) {
     );
 }
 
-fn main_menu_buttons(width: f32, height: f32) -> [Rect; 5] {
+fn main_menu_buttons(width: f32, height: f32) -> [Rect; 4] {
     let button_width = (width - 24.0).clamp(160.0, 340.0).min(width - 12.0);
-    let button_height = ((height - 240.0) / 5.0).clamp(30.0, 58.0);
+    let button_height = ((height - 240.0) / 4.0).clamp(30.0, 58.0);
     let gap = 8.0;
-    let total_height = 5.0 * button_height + 4.0 * gap;
+    let total_height = 4.0 * button_height + 3.0 * gap;
     let title_y = if height < 520.0 {
         height * 0.16
     } else {
@@ -871,10 +864,6 @@ fn shop_menu_option_rect(width: f32, height: f32) -> Rect {
     main_menu_buttons(width, height)[3]
 }
 
-fn card_gallery_menu_option_rect(width: f32, height: f32) -> Rect {
-    main_menu_buttons(width, height)[4]
-}
-
 fn card_gallery_menu_button(width: f32, _height: f32) -> Rect {
     let button_width = (width - 16.0).clamp(72.0, 104.0);
     Rect::new(
@@ -883,6 +872,17 @@ fn card_gallery_menu_button(width: f32, _height: f32) -> Rect {
         button_width,
         36.0,
     )
+}
+
+fn shop_action_buttons(width: f32, height: f32) -> [Rect; 2] {
+    let gap = 8.0;
+    let button_width = ((width - 30.0 - gap) / 2.0).min(170.0);
+    let start_x = (width - button_width * 2.0 - gap) / 2.0;
+    let y = height - 78.0;
+    [
+        Rect::new(start_x, y, button_width, 34.0),
+        Rect::new(start_x + button_width + gap, y, button_width, 34.0),
+    ]
 }
 
 fn card_gallery_size_buttons(width: f32, height: f32) -> [Rect; 3] {
@@ -964,10 +964,9 @@ fn draw_card_gallery(width: f32, height: f32, selected_size: usize, progress: &p
         );
     }
 
-    let menu = card_gallery_menu_button(width, height);
-    draw_button(menu, "MENY", true);
+    draw_button(card_gallery_menu_button(width, height), "BUTIK", true);
     draw_centered_text(
-        "52 kort • Kortbutiken ändrar utseendet • M: meny",
+        "52 kort • Esc: tillbaka till butiken • 1–3: storlek",
         width / 2.0,
         height - 8.0,
         13,
@@ -1167,8 +1166,12 @@ fn draw_shop(
         );
     }
 
-    let menu = card_gallery_menu_button(width, height);
-    draw_button(menu, "MENY", true);
+    for (rect, label) in shop_action_buttons(width, height)
+        .into_iter()
+        .zip(["MENY", "VISA KORTLEK"])
+    {
+        draw_button(rect, label, true);
+    }
     draw_centered_text(
         status,
         width / 2.0,
@@ -1181,7 +1184,7 @@ fn draw_shop(
         },
     );
     draw_centered_text(
-        "Sex unika stilar • Köp eller välj • M: meny",
+        "Sex unika stilar • Köp eller välj",
         width / 2.0,
         height - 4.0,
         10,
@@ -2744,8 +2747,7 @@ mod tests {
             let sjuan = sjuan_menu_option_rect(width, height);
             let patience = solitaire_menu_option_rect(width, height);
             let shop = shop_menu_option_rect(width, height);
-            let gallery = card_gallery_menu_option_rect(width, height);
-            let buttons = [vändtia, sjuan, patience, shop, gallery];
+            let buttons = [vändtia, sjuan, patience, shop];
             for button in buttons {
                 assert!(button.x >= 0.0);
                 assert!(button.y >= 0.0);
@@ -2781,6 +2783,28 @@ mod tests {
                 assert_eq!(
                     shop_tab_at(rect.x + rect.w / 2.0, rect.y + rect.h / 2.0, width),
                     Some(tab == 0)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shop_actions_fit_below_the_style_grid() {
+        for (width, height) in [(280.0, 390.0), (390.0, 844.0), (1100.0, 760.0)] {
+            let choices = shop_choice_rects(width, height);
+            let choices_bottom = choices
+                .iter()
+                .map(|rect| rect.y + rect.h)
+                .fold(0.0_f32, f32::max);
+            for (index, rect) in shop_action_buttons(width, height).into_iter().enumerate() {
+                assert!(rect.x >= 0.0);
+                assert!(rect.y >= choices_bottom);
+                assert!(rect.x + rect.w <= width);
+                assert!(rect.y + rect.h < height - 40.0);
+                assert_eq!(
+                    draw_button_contains(rect, rect.x + rect.w / 2.0, rect.y + rect.h / 2.0),
+                    true,
+                    "shop action {index} should be clickable"
                 );
             }
         }
