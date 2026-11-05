@@ -8,7 +8,7 @@ fn main() {
     let mut seed = 1;
     {
         let mut parser = ArgumentParser::new();
-        parser.set_description("Spela Vändtia i ett terminalgränssnitt.");
+        parser.set_description("Spela Kortspel i ett terminalgränssnitt.");
         parser.refer(&mut players).add_option(
             &["-p", "--players"],
             Store,

@@ -9,6 +9,8 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use kortspel::games::vandtia::{Game, MoveError, PlayerPhase, TurnOutcome};
+use kortspel::{Card, Rank, Suit, simulator::play_computer_turn};
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -17,8 +19,6 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
-use vandtia::games::vandtia::{Game, MoveError, PlayerPhase, TurnOutcome};
-use vandtia::{Card, Rank, Suit, simulator::play_computer_turn};
 
 type AppResult<T> = Result<T, Box<dyn Error>>;
 

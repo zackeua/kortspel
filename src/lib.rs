@@ -1,4 +1,4 @@
-//! Shared card types and game engines for the Vändtia card-game collection.
+//! Shared card types and game engines for the Kortspel collection.
 
 pub mod cards;
 pub mod games;

@@ -1,8 +1,8 @@
 [package]
-name = "vandtia"
+name = "kortspel"
 version = "0.1.0"
 edition = "2024"
-default-run = "vandtia"
+default-run = "kortspel"
 
 [features]
 default = []
@@ -16,15 +16,15 @@ ratatui = { version = "0.29", optional = true }
 macroquad = { version = "0.4.16", optional = true }
 
 [[bin]]
-name = "vandtia"
+name = "kortspel"
 path = "src/main.rs"
 
 [[bin]]
-name = "vandtia-tui"
+name = "kortspel-tui"
 path = "src/bin/tui.rs"
 required-features = ["tui-requirements"]
 
 [[bin]]
-name = "vandtia-graphics"
+name = "kortspel-graphics"
 path = "src/bin/graphics.rs"
 required-features = ["graphics"]

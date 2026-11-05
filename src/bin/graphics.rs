@@ -2,13 +2,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, process};
 
-use macroquad::prelude::*;
-use vandtia::card_renderer::{self, CARD_HEIGHT, CARD_WIDTH, CardStyle};
-use vandtia::games::{
+use kortspel::card_renderer::{self, CARD_HEIGHT, CARD_WIDTH, CardStyle};
+use kortspel::games::{
     sjuan, solitaire,
     vandtia::{Game, PlayerPhase, TurnOutcome},
 };
-use vandtia::{Card, Rank, Suit, simulator::play_computer_turn};
+use kortspel::{Card, Rank, Suit, simulator::play_computer_turn};
+use macroquad::prelude::*;
 
 #[path = "graphics/progress.rs"]
 mod progress;
@@ -703,7 +703,7 @@ fn parse_args() -> Result<(usize, Option<u64>), Box<dyn std::error::Error>> {
                 seed = Some(args.next().ok_or("--seed kräver ett värde")?.parse()?);
             }
             "--help" | "-h" => {
-                println!("Användning: vandtia-graphics [--players 2-5] [--seed N]");
+                println!("Användning: kortspel-graphics [--players 2-5] [--seed N]");
                 println!("Utan --seed skapas ett nytt startvärde när spelet startar.");
                 process::exit(0);
             }
@@ -950,7 +950,7 @@ fn draw_card_gallery(width: f32, height: f32, selected_size: usize, progress: &p
     let row_gap = if height < 520.0 { 9.0 } else { 18.0 };
     let selector = card_gallery_size_buttons(width, height);
     let start_y = selector[0].y + selector[0].h + 18.0;
-    let deck = vandtia::cards::standard_deck();
+    let deck = kortspel::cards::standard_deck();
     for (index, card) in deck.into_iter().enumerate() {
         let column = index % 13;
         let row = index / 13;

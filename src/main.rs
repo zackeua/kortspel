@@ -1,7 +1,7 @@
 mod cli;
 
 use argparse::{ArgumentParser, Store, StoreTrue};
-use vandtia::simulator::simulate;
+use kortspel::simulator::simulate;
 
 fn main() {
     let mut play = false;
@@ -11,7 +11,7 @@ fn main() {
 
     {
         let mut parser = ArgumentParser::new();
-        parser.set_description("Spela eller simulera partier Vändtia.");
+        parser.set_description("Spela eller simulera kortspel.");
         parser.refer(&mut play).add_option(
             &["-i", "--play"],
             StoreTrue,
